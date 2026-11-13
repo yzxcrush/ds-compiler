@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1621">
+<title>Ds Compiler</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <button id="btnMenu" class="icon-btn" aria-label="菜单">☰</button>
+    <div class="peer">
+      <div class="avatar">Ds</div>
+      <div class="peer-text">
+        <div class="peer-name">Ds Compiler <span class="verified">✓</span></div>
+        <div class="peer-status" id="status">编译器就绪 · v0.1.0</div>
+      </div>
+    </div>
+    <button id="btnFilesTop" class="icon-btn" aria-label="文件">📂</button>
+  </header>
+
+  <main id="chat">
+    <div class="date-divider"><span>今天</span></div>
+  </main>
+
+  <footer id="composer">
+    <div class="toolbar">
+      <button data-act="run" class="chip primary">▶ 运行</button>
+      <button data-act="new" class="chip">＋ 新建</button>
+      <button data-act="files" class="chip">📂 文件</button>
+      <button data-act="samples" class="chip">🧩 示例</button>
+      <button data-act="clear" class="chip">🧹 清屏</button>
+    </div>
+    <div class="input-row">
+      <textarea id="codeInput" rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="输入 Ds 代码，点 ▶ 运行（可换行写多个语句）"></textarea>
+      <button id="btnSend" class="send-btn" aria-label="运行">▶</button>
+    </div>
+  </footer>
+</div>
+
+<div id="editor" class="hidden">
+  <header class="ed-header">
+    <button id="edClose" class="icon-btn" aria-label="关闭">✕</button>
+    <input id="edName" class="ed-name" value="untitled.ds" spellcheck="false" autocapitalize="off">
+    <button id="edSave" class="chip">保存</button>
+    <button id="edRun" class="chip primary">▶ 运行</button>
+  </header>
+  <div class="ed-body">
+    <div id="lineNumbers" class="gutter">1</div>
+    <textarea id="edCode" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+  </div>
+</div>
+
+<div id="drawerMask" class="mask hidden"></div>
+<aside id="drawer" class="drawer">
+  <div class="drawer-head">
+    <div class="avatar">Ds</div>
+    <div><b>Ds Compiler</b><div class="muted">v0.1.0 · 内置编译器 · 离线可用</div></div>
+  </div>
+  <div class="drawer-section" id="drawerFiles"><div class="drawer-title">我的脚本</div></div>
+  <div class="drawer-section" id="drawerSamples"><div class="drawer-title">示例</div></div>
+  <div class="drawer-section">
+    <div class="drawer-title">设置</div>
+    <button id="fontMinus" class="chip">A−</button>
+    <button id="fontPlus" class="chip">A＋</button>
+  </div>
+</aside>
+
+<script src="ds.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
