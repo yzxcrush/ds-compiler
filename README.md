@@ -22,6 +22,13 @@
 
 暂不支持（会给出明确报错）：`class/trait/impl`、`match`、`opt/res`、`try/catch`、宏与 `comptime`、并发与内存原语——这些属于完整规范，后续版本补齐。
 
+## 下载安装（最新构建）
+
+- Release 页面：<https://github.com/yzxcrush/ds-compiler/releases/latest>
+- 直接下载：<https://github.com/yzxcrush/ds-compiler/releases/latest/download/app-debug.apk>
+
+手机上下载后点击安装即可（debug 签名，需允许「安装未知来源应用」）。完全离线，无网络权限。
+
 ## 构建 APK（GitHub Actions）
 
 推送到 `main` 或手动 `workflow_dispatch` 即自动构建：
