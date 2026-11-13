@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   apk:
@@ -33,9 +33,21 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ds-compiler-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: Publish APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Ds Compiler v0.1.${{ github.run_number }}
+          body: |
+            自动构建的 Ds Compiler Android APK（debug 签名，可直接安装）。
+            支持 Ds v0.1 编译器核心子集：函数/数组/映射/控制流/管道等。
+          files: app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
