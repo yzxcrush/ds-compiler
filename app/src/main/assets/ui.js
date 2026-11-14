@@ -113,6 +113,7 @@
       '<pre>欢迎使用 <b>Ds Compiler</b> —— 手机上的 Ds v0.1 编译器。\n\n' +
       '· 在下方输入 Ds 代码，点 ▶ 运行\n' +
       '· ＋ 新建：打开全屏编辑器\n' +
+      '· 🧠 AI 训练：内置教程，一键复制/打开 GitHub 链接\n' +
       '· 🧩 示例：hello / 斐波那契 / 质数 / 集合 / 精简(0.1c) / Flow\n' +
       '· 支持 0.1c 精简写法与 Flow 写法（#!flow 或 \\ 开头）\n' +
       '· 📂 文件：保存与打开脚本（本地离线）</pre>',
@@ -304,6 +305,8 @@
       else if (act === 'new') { openEditor('script' + (Date.now() % 1000) + '.ds', 'package app\n\nfn main() {\n    println("hello")\n}\n'); }
       else if (act === 'files') { openDrawer('files'); }
       else if (act === 'samples') { openDrawer('samples'); }
+      else if (act === 'ai') { openAiPanel(); }
+      else if (act === 'github') { location.href = 'https://github.com/yzxcrush/ds'; }
       else if (act === 'clear') {
         chat.innerHTML = '<div class="date-divider"><span>今天</span></div>';
         setStatus('已清屏 · 编译器就绪');
@@ -320,6 +323,52 @@
   }
   $('#fontPlus').addEventListener('click', function () { applyFont(1); });
   $('#fontMinus').addEventListener('click', function () { applyFont(-1); });
+
+  /* ---------------- AI 训练 / GitHub ---------------- */
+  var aiPanel = $('#aiPanel');
+  function openAiPanel() {
+    aiPanel.classList.remove('hidden');
+    aiPanel.scrollTop = 0;
+    setStatus('AI 训练教程 · 可复制链接/命令');
+  }
+  function closeAiPanel() { aiPanel.classList.add('hidden'); }
+  $('#aiClose').addEventListener('click', closeAiPanel);
+  $('#aiGithub').addEventListener('click', function () {
+    location.href = 'https://github.com/yzxcrush/ds';
+  });
+
+  var RESOURCES = {
+    gh: 'https://github.com/yzxcrush/ds',
+    spec: 'https://github.com/yzxcrush/ds/blob/main/spec/DS-v0.1.md',
+    llms: 'https://raw.githubusercontent.com/yzxcrush/ds/main/llms.txt',
+    data: 'https://github.com/yzxcrush/ds/tree/main/datasets',
+    site: 'https://yzxcrush.github.io/ds/'
+  };
+  document.querySelectorAll('[data-open]').forEach(function (item) {
+    item.addEventListener('click', function () {
+      var what = item.getAttribute('data-open');
+      if (what === 'ai') { closeDrawer(); openAiPanel(); return; }
+      closeDrawer();
+      if (RESOURCES[what]) location.href = RESOURCES[what];
+    });
+  });
+  document.querySelectorAll('[data-copy-url]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      copyText(btn.getAttribute('data-copy-url'));
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(function () { btn.textContent = old; }, 1200);
+    });
+  });
+  document.querySelectorAll('[data-copy-el]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById(btn.getAttribute('data-copy-el'));
+      if (el) copyText(el.textContent);
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(function () { btn.textContent = old; }, 1200);
+    });
+  });
 
   /* ---------------- 启动 ---------------- */
   applyFont(0);

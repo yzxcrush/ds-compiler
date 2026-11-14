@@ -201,3 +201,43 @@ body {
 .drawer-item .fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer-item .del { color: var(--muted); font-size: 12px; padding: 2px 6px; }
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 35; }
+
+
+/* ---------- 水印 ---------- */
+.watermark {
+  position: fixed; right: 10px; bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 60; pointer-events: none; user-select: none;
+  color: rgba(255,255,255,.16); font-size: 12px; letter-spacing: .06em;
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* ---------- AI 训练面板 ---------- */
+#aiPanel {
+  position: fixed; inset: 0; z-index: 35; display: flex; flex-direction: column;
+  background: var(--bg);
+}
+.ai-header { gap: 8px; }
+.ai-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-body { flex: 1; overflow-y: auto; padding: 12px 14px calc(20px + env(safe-area-inset-bottom)); }
+.ai-sec { margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,.05); padding-bottom: 12px; }
+.ai-sec h3 { margin: 0 0 6px; font-size: 15px; color: var(--accent); }
+.ai-sec p { margin: 0 0 8px; color: #c9d8e6; font-size: 13.5px; line-height: 1.55; }
+.ai-link {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--panel-2); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px; padding: 7px 10px; margin: 6px 0; font-size: 12.5px;
+}
+.ai-link code { background: none; padding: 0; color: var(--accent); }
+.ai-link .muted { flex: 1; min-width: 120px; }
+.ai-link button, .ai-link a {
+  border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05);
+  color: #dbe7f3; border-radius: 8px; padding: 3px 9px; font-size: 12px;
+}
+.ai-link a:hover, .ai-link button:active { background: rgba(255,255,255,.14); }
+.ai-code { position: relative; background: #0b121b; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.ai-code pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.55; color: #dbe7f3; }
+.copy-code { margin-top: 8px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: #dbe7f3; border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+.ai-notes { margin: 0 0 8px; padding-left: 18px; color: #c9d8e6; font-size: 13px; }
+.ai-notes li { margin: 3px 0; }
+.ai-foot { text-align: center; color: var(--muted); font-size: 12px; padding: 10px 0 6px; }
+.drawer-credit { text-align: center; border-top: 1px solid rgba(255,255,255,.06); }

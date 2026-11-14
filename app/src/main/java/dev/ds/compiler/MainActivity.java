@@ -1,6 +1,9 @@
 package dev.ds.compiler;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
+import android.net.Uri;
+import android.webkit.WebResourceRequest;
 import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
@@ -46,7 +49,31 @@ public class MainActivity extends Activity {
         settings.setSupportZoom(false);
         settings.setTextZoom(100);
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return openExternal(request.getUrl());
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return openExternal(Uri.parse(url));
+            }
+
+            private boolean openExternal(Uri uri) {
+                String scheme = uri.getScheme();
+                if ("http".equals(scheme) || "https".equals(scheme)) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                        return true;
+                    } catch (Exception ignored) {
+                        return false;
+                    }
+                }
+                return false;
+            }
+        });
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         setContentView(webView);
         webView.loadUrl("file:///android_asset/index.html");
