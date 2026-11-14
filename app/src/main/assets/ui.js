@@ -20,6 +20,18 @@
 
   var samples = [
     {
+      name: 'flow_hello.dsf',
+      code: '#!flow\np "hello, Ds"\n'
+    },
+    {
+      name: 'flow_fib.dsf',
+      code: '#!flow\n\\fib n = ?n<2: n; fib(n-1)+fib(n-2)\nfor i in 0..10: p f"fib({i})={fib(i)}"\n'
+    },
+    {
+      name: 'concise.ds',
+      code: 'p("hello, 0.1c")\nfn add(a,b)=a+b\np(f"2+3={add(2,3)}")\nvar t=0\nfor i in 1..6: t+=i\np(f"total={t}")\n'
+    },
+    {
       name: 'hello.ds',
       code: 'package hello\n\nfn main() {\n    println("hello, Ds!")\n    println("在手机上运行 Ds v0.1")\n}\n'
     },
@@ -101,7 +113,8 @@
       '<pre>欢迎使用 <b>Ds Compiler</b> —— 手机上的 Ds v0.1 编译器。\n\n' +
       '· 在下方输入 Ds 代码，点 ▶ 运行\n' +
       '· ＋ 新建：打开全屏编辑器\n' +
-      '· 🧩 示例：内置 hello / 斐波那契 / 质数 / 集合\n' +
+      '· 🧩 示例：hello / 斐波那契 / 质数 / 集合 / 精简(0.1c) / Flow\n' +
+      '· 支持 0.1c 精简写法与 Flow 写法（#!flow 或 \\ 开头）\n' +
       '· 📂 文件：保存与打开脚本（本地离线）</pre>',
       { who: 'Ds Compiler' });
   }

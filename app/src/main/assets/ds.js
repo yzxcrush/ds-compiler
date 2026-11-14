@@ -1,7 +1,10 @@
 /*!
- * Ds v0.1 编译器内核（JavaScript 版，供 Ds Compiler Android App 内嵌使用）
+ * Ds 编译器内核（JavaScript 版，供 Ds Compiler Android App 内嵌使用）
  * 覆盖核心子集：package/fn/let/var、字面量、数组/映射、控制流、函数/闭包、
  *   |> 管道、错误定位、步数保护；内建 println/print/len/range/str/concat/format/math.*
+ * 0.1c 精简写法：隐式入口、表达式函数体、`if c: stmt`、复合赋值、`a..b`、f-string、
+ *   首次赋值即不可变绑定；Flow 写法（#!flow / `\` / .dsf）：`\name a b = expr`、
+ *   并置调用、`.` 块、`?`/`^`/`;`、短别名 p/s/l/r。
  * 许可：MIT
  */
 (function (root, factory) {
@@ -10,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.1.0';
+  var VERSION = '0.2.0';
   var MAX_STEPS = 20 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -47,26 +50,55 @@
   DsError.prototype.constructor = DsError;
 
   /* ============================ 词法 ============================ */
-  var OPS = ['|>','->','=>','<<','>>','<=','>=','==','!=','&&','||',
+  var OPS = ['<<=','>>=','+=','-=','*=','/=','%=','&=','|=','^=',
+             '|>','->','=>','<<','>>','<=','>=','==','!=','&&','||','..',
              '+','-','*','/','%','=','!','<','>','&','|','^','~','.','@'];
   var PUNCT = '(){}[],:;';
 
-  function tokenize(src) {
+  function tokenize(src, flow) {
     var toks = [];
     var i = 0, line = 1, lineStart = 0, n = src.length;
+    var sp = false, bol = true;
 
     function push(kind, text, start, value) {
-      toks.push({ k: kind, text: text, line: line, col: start - lineStart + 1, v: value });
+      toks.push({ k: kind, text: text, line: line, col: start - lineStart + 1, v: value,
+                  sp: sp, bol: bol && kind !== 'nl' });
+      sp = false; bol = false;
     }
     function fail(msg, at) {
       at = at === undefined ? i : at;
       throw new DsError(msg, line, at - lineStart + 1);
     }
+    function readEscape(start) {
+      var e = src[i + 1];
+      if (e === 'n') { i += 2; return '\n'; }
+      if (e === 'r') { i += 2; return '\r'; }
+      if (e === 't') { i += 2; return '\t'; }
+      if (e === '0') { i += 2; return '\0'; }
+      if (e === '\\') { i += 2; return '\\'; }
+      if (e === '"') { i += 2; return '"'; }
+      if (e === '{') { i += 2; return '{'; }
+      if (e === '}') { i += 2; return '}'; }
+      if (e === 'x') {
+        var h = src.substr(i + 2, 2);
+        if (!/^[0-9a-fA-F]{2}$/.test(h)) fail('非法 \\xNN 转义', start);
+        i += 4; return String.fromCharCode(parseInt(h, 16));
+      }
+      if (e === 'u' && src[i + 2] === '{') {
+        var close = src.indexOf('}', i + 3);
+        if (close < 0) fail('非法 \\u{...} 转义', start);
+        var code = parseInt(src.slice(i + 3, close), 16);
+        i = close + 1;
+        return String.fromCodePoint(code);
+      }
+      fail('未知转义 \\' + e, start);
+    }
 
     while (i < n) {
       var c = src[i];
-      if (c === '\n') { push('nl', '\n', i); i++; line++; lineStart = i; continue; }
-      if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+      if (i === 0 && c === '\uFEFF') { i++; continue; }
+      if (c === '\n') { push('nl', '\n', i); i++; line++; lineStart = i; bol = true; continue; }
+      if (c === ' ' || c === '\t' || c === '\r') { i++; sp = true; continue; }
 
       if (src.startsWith('#|', i)) {
         var start = i, depth = 0;
@@ -123,6 +155,49 @@
         var bytes = [];
         for (var bi = 0; bi < body.length; bi++) bytes.push(body.charCodeAt(bi) & 255);
         push('bytes', body, b0, bytes);
+        continue;
+      }
+
+      if (c === 'f' && src[i + 1] === '"') {
+        var f0 = i; i += 2;
+        var parts = [], fbuf = '', closed = false;
+        while (i < n) {
+          var ch = src[i];
+          if (ch === '"') { i++; closed = true; break; }
+          if (ch === '\n') fail('f-string 不可含裸换行', f0);
+          if (ch === '\\') { fbuf += readEscape(f0); continue; }
+          if (ch === '{') {
+            if (src[i + 1] === '{') { fbuf += '{'; i += 2; continue; }
+            if (fbuf) { parts.push({ s: fbuf }); fbuf = ''; }
+            var e0 = i + 1, depth = 1, j = e0;
+            while (j < n && depth > 0) {
+              var cj = src[j];
+              if (cj === '"') {
+                j++;
+                while (j < n && src[j] !== '"') { if (src[j] === '\\') j++; j++; }
+                j++; continue;
+              }
+              if (cj === '\n') fail('f-string 插值不可跨行', f0);
+              if (cj === '{') depth++;
+              else if (cj === '}') { depth--; if (depth === 0) break; }
+              j++;
+            }
+            if (depth !== 0) fail("f-string 插值缺少 '}'", f0);
+            var srcExpr = src.slice(e0, j);
+            if (!srcExpr.trim()) fail('f-string 插值为空', f0);
+            parts.push({ e: srcExpr, line: line });
+            i = j + 1;
+            continue;
+          }
+          if (ch === '}') {
+            if (src[i + 1] === '}') { fbuf += '}'; i += 2; continue; }
+            fail("f-string 中单独的 '}'（字面花括号写作 }}）", f0);
+          }
+          fbuf += ch; i++;
+        }
+        if (!closed) fail('f-string 未闭合', f0);
+        if (fbuf) parts.push({ s: fbuf });
+        push('fstr', src.slice(f0, i), f0, parts);
         continue;
       }
 
@@ -191,6 +266,7 @@
       }
       if (matched) continue;
 
+      if (flow && (c === '\\' || c === '?')) { push('punct', c, i); i++; continue; }
       if (PUNCT.indexOf(c) >= 0) { push('punct', c, i); i++; continue; }
       fail("未知字符 '" + c + "'（标识符仅 ASCII）", i);
     }
@@ -199,8 +275,8 @@
   }
 
   /* ============================ 语法 ============================ */
-  function Parser(toks, repl) {
-    this.toks = toks; this.pos = 0; this.repl = !!repl;
+  function Parser(toks, repl, flow) {
+    this.toks = toks; this.pos = 0; this.repl = !!repl; this.flow = !!flow; this.noApply = 0;
   }
   Parser.prototype = {
     cur: function () { return this.toks[this.pos]; },
@@ -255,7 +331,7 @@
 
     parseProgram: function () {
       this.pos = 0;
-      var prog = { type: 'Program', items: [], name: null };
+      var prog = { type: 'Program', items: [], name: null, hasTopStmt: false };
       this.skipNl();
       if (this.isKw('package')) {
         this.adv(); this.skipNl();
@@ -270,11 +346,11 @@
         var item;
         if (this.isKw('fn')) item = this.parseFn();
         else if (this.isKw('let') || this.isKw('var')) item = this.parseLet();
-        else if (this.repl) item = this.parseStmt();
         else {
           if (this.cur().k === 'kw') this.rejectUnsupported();
-          this.fail('顶层只允许 `package` / `fn` / `let` / `var`（编译器核心子集）');
+          item = this.parseStmt();
         }
+        if (item.type !== 'Fn' && item.type !== 'Let' && item.type !== 'Var') prog.hasTopStmt = true;
         prog.items.push(item);
         this.skipNl();
       }
@@ -290,8 +366,24 @@
       if (this.isKw('->')) { this.adv(); this.skipType(); }
       this.skipNl();
       if (this.isKw('where')) while (!this.isPunct('{') && this.cur().k !== 'eof') this.adv();
-      node.body = this.parseBlock();
+      node.body = this.parseFnBody();
       return node;
+    },
+
+    parseFnBody: function () {
+      this.skipNl();
+      if (this.isOp('=')) {
+        this.adv();
+        var expr = this.parseExpr(1);
+        return { type: 'Block', stmts: [{ type: 'ExprStmt', expr: expr, line: expr.line, col: expr.col }],
+                 line: expr.line, col: expr.col };
+      }
+      if (this.isPunct(':')) {
+        this.adv(); this.skipNl();
+        var st = this.parseStmt();
+        return { type: 'Block', stmts: st ? [st] : [], line: st ? st.line : 0, col: st ? st.col : 0 };
+      }
+      return this.parseBlock();
     },
 
     parseParams: function () {
@@ -337,6 +429,31 @@
       return block;
     },
 
+    /* 0.1c / Flow：`if c: stmt` 这类单语句体；`{...}` 依旧可用 */
+    parseBody: function (what) {
+      this.skipNl();
+      if (this.isPunct('{')) return this.parseBlock();
+      if (this.isPunct(':')) {
+        var ct = this.cur(); this.adv(); this.skipNl();
+        var st = this.parseStmt();
+        if (!st) this.fail('期望语句（' + what + ' 的 `:` 体）', ct);
+        return { type: 'Block', stmts: [st], line: st.line, col: st.col };
+      }
+      /* Flow：while/for/loop 也可用单独 `.` 结束的多语句块 */
+      if (this.flow) return this.parseFlowBlock();
+      this.fail("期望块 '{' 或单语句 ':'（" + what + "），得到 " + this.cur().text);
+    },
+
+    parseSingleStmtBlock: function (what) {
+      this.skipNl();
+      if (this.isPunct('{')) return this.parseBlock();
+      if (this.isPunct(':')) this.adv();
+      this.skipNl();
+      var st = this.parseStmt();
+      if (!st) this.fail('期望语句（' + what + '）');
+      return { type: 'Block', stmts: [st], line: st.line, col: st.col };
+    },
+
     parseLet: function () {
       var t = this.cur();
       var isMut = this.isKw('var');
@@ -356,15 +473,23 @@
       if (t.k === 'eof') return null;
       if (this.isPunct('{')) return this.parseBlock();
       if (this.isKw('let') || this.isKw('var')) return this.parseLet();
+      if (this.flow && this.isPunct('\\')) return this.parseFlowFn();
+      if (this.flow && this.isPunct('?')) return this.parseFlowIf();
+      if (this.flow && this.isOp('^')) {
+        this.adv();
+        var rv0 = null;
+        if (this.canStartExpr() && !this.isPunct(';') && !this.isPunct('}')) rv0 = this.parseExpr(1);
+        return { type: 'Return', value: rv0, line: t.line, col: t.col };
+      }
       if (this.isKw('if')) return this.parseIf();
       if (this.isKw('while')) {
         this.adv();
-        var w = { type: 'While', cond: this.parseExpr(1), body: this.parseBlock(), line: t.line, col: t.col };
+        var w = { type: 'While', cond: this.parseExpr(1), body: this.parseBody('while'), line: t.line, col: t.col };
         return w;
       }
       if (this.isKw('loop')) {
         this.adv();
-        return { type: 'Loop', body: this.parseBlock(), line: t.line, col: t.col };
+        return { type: 'Loop', body: this.parseBody('loop'), line: t.line, col: t.col };
       }
       if (this.isKw('for')) {
         this.adv();
@@ -376,7 +501,7 @@
         if (!this.isKw('in')) this.fail('for 需要 `in`');
         this.adv();
         var iter = this.parseExpr(1);
-        return { type: 'For', name: name, iter: iter, body: this.parseBlock(), line: t.line, col: t.col };
+        return { type: 'For', name: name, iter: iter, body: this.parseBody('for'), line: t.line, col: t.col };
       }
       if (this.isKw('break')) {
         this.adv();
@@ -402,26 +527,190 @@
         if (left.type !== 'Var' && left.type !== 'Index') this.fail('赋值目标只能是变量或下标', t);
         return { type: 'Assign', target: left, value: right, line: t.line, col: t.col };
       }
+      var cop = this.cur().k === 'op' ? COMPOUND[this.cur().text] : null;
+      if (cop) {
+        this.adv();
+        var cright = this.parseExpr(1);
+        if (left.type !== 'Var' && left.type !== 'Index') this.fail('复合赋值目标只能是变量或下标', t);
+        return { type: 'Assign', target: left, value: cright, op: cop, line: t.line, col: t.col };
+      }
       return { type: 'ExprStmt', expr: left, line: left.line, col: left.col };
     },
 
     parseIf: function () {
       var t = this.cur(); this.adv();
       var cond = this.parseExpr(1);
-      var thenBlock = this.parseBlock();
+      var thenBlock = this.parseBody('if');
       var elseNode = null;
       this.skipNl();
       if (this.isKw('else')) {
         this.adv(); this.skipNl();
-        elseNode = this.isKw('if') ? this.parseIf() : this.parseBlock();
+        if (this.isKw('if')) elseNode = this.parseIf();
+        else if (this.isPunct('{')) elseNode = this.parseBlock();
+        else if (this.flow && this.cur().bol) elseNode = this.parseFlowBlock();
+        else elseNode = this.parseSingleStmtBlock('else');
+        this.skipNl();
       }
       return { type: 'If', cond: cond, then: thenBlock, else: elseNode, line: t.line, col: t.col };
     },
 
+    /* ---------------- Flow（0.1c 结构性精简写法） ---------------- */
+    canStartExpr: function () {
+      var t = this.cur();
+      if (t.k === 'nl' || t.k === 'eof') return false;
+      if (t.k === 'int' || t.k === 'float' || t.k === 'str' || t.k === 'bytes' || t.k === 'fstr' || t.k === 'ident') return true;
+      if (t.k === 'punct') return t.text === '(' || t.text === '[' || t.text === '{' || t.text === '?';
+      if (t.k === 'kw') return t.text === 'if' || t.text === 'loop';
+      if (t.k === 'op') return t.text === '-' || t.text === '!' || t.text === '~' || t.text === '^';
+      return false;
+    },
+
+    /* 并置调用的“原子”必须与上一个记号空白分隔、且同一行 */
+    atomStarter: function () {
+      var t = this.cur();
+      if (t.bol || !t.sp || t.k === 'nl' || t.k === 'eof') return false;
+      if (t.k === 'int' || t.k === 'float' || t.k === 'str' || t.k === 'bytes' || t.k === 'fstr' || t.k === 'ident') return true;
+      if (t.k === 'punct') return t.text === '(' || t.text === '[';
+      if (t.k === 'kw') return t.text === 'if' || t.text === 'loop';
+      if (t.k === 'op') {
+        if (t.text !== '-' && t.text !== '!' && t.text !== '~') return false;
+        var nx = this.peek(1);
+        if (nx.sp || nx.k === 'nl' || nx.k === 'eof') return false;
+        return nx.k === 'ident' || nx.k === 'int' || nx.k === 'float' || nx.k === 'str' || nx.k === 'fstr' ||
+               (nx.k === 'punct' && (nx.text === '(' || nx.text === '['));
+      }
+      return false;
+    },
+
+    parseFlowFn: function () {
+      var t = this.cur(); this.adv(); /* '\\' */
+      var name = this.expectIdent('函数名');
+      var params = [];
+      for (;;) {
+        var p = this.cur();
+        if (p.k !== 'ident') break;
+        var pname = p.v; this.adv();
+        /* 紧贴的类型标注 `a:i32`；`:` 后有空格视为语句体分隔符 */
+        if (this.isPunct(':') && this.peek(1).k !== 'nl' && !this.peek(1).sp) {
+          this.adv();
+          this.consumeFlowType();
+        }
+        params.push({ name: pname, def: null });
+      }
+      var node = { type: 'Fn', name: name, params: params, body: null, line: t.line, col: t.col };
+      if (this.isKw('->')) {
+        this.adv();
+        this.skipFlowType();
+      }
+      if (this.isOp('=')) {
+        this.adv();
+        var expr = this.parseExpr(1);
+        node.body = { type: 'Block', stmts: [{ type: 'ExprStmt', expr: expr, line: expr.line, col: expr.col }],
+                      line: expr.line, col: expr.col };
+      } else if (this.isPunct(':')) {
+        this.adv(); this.skipNl();
+        var st = this.parseStmt();
+        node.body = { type: 'Block', stmts: st ? [st] : [], line: st ? st.line : 0, col: st ? st.col : 0 };
+      } else if (this.isPunct('{')) {
+        node.body = this.parseBlock();
+      } else {
+        node.body = this.parseFlowBlock();
+      }
+      return node;
+    },
+
+    consumeFlowType: function () {
+      if (this.isPunct('[') || this.isPunct('(')) { this.skipBalanced(); return; }
+      if (this.cur().k === 'ident') this.adv();
+      else this.fail('期望类型名，得到 ' + this.cur().text);
+      while (this.isOp('.') && this.peek(1).k === 'ident') { this.adv(); this.adv(); }
+      while (this.isPunct('[')) this.skipBalanced();
+    },
+
+    skipBalanced: function () {
+      var open = this.cur().text;
+      var close = open === '[' ? ']' : ')';
+      var depth = 0;
+      for (;;) {
+        var a = this.cur();
+        if (a.k === 'eof' || a.k === 'nl') this.fail('类型注解未闭合');
+        if (a.k === 'punct' && a.text === open) depth++;
+        else if (a.k === 'punct' && a.text === close) {
+          depth--; this.adv();
+          if (depth === 0) return;
+          continue;
+        }
+        this.adv();
+      }
+    },
+
+    skipFlowType: function () {
+      for (;;) {
+        var a = this.cur();
+        if (a.k === 'nl' || a.k === 'eof') return;
+        if (a.k === 'punct' && (a.text === ':' || a.text === ';' || a.text === '{')) return;
+        if (a.k === 'op' && a.text === '=') return;
+        this.adv();
+      }
+    },
+
+    parseFlowBlock: function () {
+      this.skipNl();
+      var t = this.cur();
+      var block = { type: 'Block', stmts: [], line: t.line, col: t.col };
+      for (;;) {
+        this.skipNl();
+        while (this.isPunct(';')) { this.adv(); this.skipNl(); }
+        var c = this.cur();
+        if (c.k === 'eof') this.fail("块未闭合（缺少单独一行的 '.'）", t);
+        if (c.k === 'op' && c.text === '.' && c.bol) { this.adv(); break; }
+        if (c.k === 'kw' && c.text === 'else') break;   /* else 属于外层 if */
+        var stmt = this.parseStmt();
+        if (stmt) block.stmts.push(stmt);
+      }
+      return block;
+    },
+
+    parseFlowIf: function () {
+      var t = this.cur(); this.adv(); /* '?' */
+      var cond = this.parseExpr(1);
+      var thenB;
+      if (this.isPunct(':')) {
+        this.adv();
+        thenB = this.parseSingleStmtBlock('?');
+      } else if (this.isPunct('{')) {
+        thenB = this.parseBlock();
+      } else {
+        thenB = this.parseFlowBlock();
+      }
+      var elseN = null;
+      this.skipNl();
+      var sep = false;
+      if (this.isPunct(';')) { this.adv(); sep = true; this.skipNl(); }
+      if (this.isKw('else')) {
+        this.adv(); this.skipNl();
+        elseN = this.parseFlowElse(true);
+      } else if (sep && this.canStartExpr()) {
+        elseN = this.parseFlowElse(false);
+      }
+      return { type: 'If', cond: cond, then: thenB, else: elseN, line: t.line, col: t.col };
+    },
+
+    parseFlowElse: function (viaElse) {
+      if (this.isPunct('?')) return this.parseFlowIf();
+      if (this.isPunct('{')) return this.parseBlock();
+      /* `else` 独占一行时，后接以单独 `.` 结束的多语句块（内层先结束） */
+      if (viaElse && this.cur().bol) return this.parseFlowBlock();
+      return this.parseSingleStmtBlock('else');
+    },
+
+
     parseExpr: function (minPrec) {
-      var left = this.parseUnary();
+      var left = this.parseApply();
       for (;;) {
         var t = this.cur();
+        /* Flow：换行即语句边界，二元运算符不可从下一行续接 */
+        if (this.flow && t.bol) break;
         var op = null;
         if (t.k === 'op') op = t.text;
         else if (t.k === 'kw' && t.text === '|>') op = t.text;
@@ -430,9 +719,27 @@
         if (!pr || pr < minPrec) break;
         this.adv();
         var right = this.parseExpr(pr + 1);
-        left = { type: 'Binary', op: op, left: left, right: right, line: t.line, col: t.col };
+        if (op === '..') left = { type: 'Range', lo: left, hi: right, line: t.line, col: t.col };
+        else left = { type: 'Binary', op: op, left: left, right: right, line: t.line, col: t.col };
       }
       return left;
+    },
+
+    /* Flow：并置调用（同一层连续原子收集为多实参） */
+    parseApply: function () {
+      var e = this.parseUnary();
+      if (!this.flow || this.noApply) return e;
+      var args = [];
+      while (this.atomStarter()) args.push(this.parseUnary());
+      if (!args.length) return e;
+      return { type: 'Call', callee: e, args: args, line: e.line, col: e.col };
+    },
+
+    /* 数组字面量 / 显式调用实参 / 映射键值：空白分隔的是多个元素，不是并置调用 */
+    parseNoApply: function (fn) {
+      this.noApply++;
+      try { return fn.call(this); }
+      finally { this.noApply--; }
     },
 
     parseUnary: function () {
@@ -450,15 +757,19 @@
       for (;;) {
         this.skipNl();
         if (this.isPunct('(')) {
-          var t = this.cur(); this.adv();
+          var t = this.cur();
+          if (this.flow && (t.sp || t.bol)) break; /* Flow：`f (a)` 交给并置调用 */
+          this.adv();
           var args = [];
           this.skipNl();
           if (!this.isPunct(')')) {
             for (;;) {
               this.skipNl();
-              args.push(this.parseExpr(1));
+              args.push(this.parseNoApply(function () { return this.parseExpr(1); }));
               this.skipNl();
               if (this.isPunct(',')) { this.adv(); continue; }
+              /* Flow：显式括号内也允许空白分隔实参（`add(2 3)`） */
+              if (this.flow && !this.isPunct(')') && !this.cur().bol && this.canStartExpr()) continue;
               break;
             }
           }
@@ -467,7 +778,9 @@
           continue;
         }
         if (this.isPunct('[')) {
-          var ti = this.cur(); this.adv();
+          var ti = this.cur();
+          if (this.flow && (ti.sp || ti.bol)) break; /* Flow：`xs [0]` 视为并置实参 */
+          this.adv();
           var idx = this.parseExpr(1);
           this.expectPunct(']', '下标');
           e = { type: 'Index', obj: e, index: idx, line: ti.line, col: ti.col };
@@ -485,6 +798,23 @@
         this.adv();
         return { type: 'Lit', kind: t.k, value: t.v, line: t.line, col: t.col };
       }
+      if (t.k === 'fstr') {
+        this.adv();
+        var self = this;
+        var fparts = t.v.map(function (p) {
+          if (p.e === undefined) return { str: p.s };
+          var sub = new Parser(tokenize(p.e, self.flow), false, self.flow);
+          try {
+            var ex = sub.parseExpr(1);
+            if (sub.cur().k !== 'eof') sub.fail('f-string 插值存在多余内容');
+            return { expr: ex };
+          } catch (err) {
+            if (err instanceof DsError) err.line += (p.line || 1) - 1;
+            throw err;
+          }
+        });
+        return { type: 'FStr', parts: fparts, line: t.line, col: t.col };
+      }
       if (t.k === 'ident') {
         var name = t.v; this.adv();
         if (name === 'true' || name === 'false') {
@@ -501,12 +831,13 @@
         if (t.text === '(') { this.adv(); var e = this.parseExpr(1); this.expectPunct(')', '括号'); return e; }
         if (t.text === '[') return this.parseArray();
         if (t.text === '{') return this.parseBrace();
+        if (this.flow && t.text === '?') return this.parseFlowIf();
       }
       if (t.k === 'kw') {
         if (t.text === 'if') return this.parseIf();
         if (t.text === 'loop') {
           this.adv();
-          return { type: 'LoopExpr', body: this.parseBlock(), line: t.line, col: t.col };
+          return { type: 'LoopExpr', body: this.parseBody('loop'), line: t.line, col: t.col };
         }
       }
       this.rejectUnsupported();
@@ -521,7 +852,7 @@
         while (this.isPunct(',')) { this.adv(); this.skipNl(); }
         if (this.isPunct(']')) { this.adv(); break; }
         if (this.cur().k === 'eof') this.fail('数组字面量未闭合', t);
-        arr.items.push(this.parseExpr(1));
+        arr.items.push(this.parseNoApply(function () { return this.parseExpr(1); }));
         this.skipNl();
         if (this.isPunct(',')) this.adv();
       }
@@ -547,10 +878,10 @@
           this.skipNl();
           while (this.isPunct(',')) { this.adv(); this.skipNl(); }
           if (this.isPunct('}')) { this.adv(); break; }
-          var key = this.parseExpr(1);
+          var key = this.parseNoApply(function () { return this.parseExpr(1); });
           this.skipNl();
           this.expectPunct(':', '映射键值对');
-          var val = this.parseExpr(1);
+          var val = this.parseNoApply(function () { return this.parseExpr(1); });
           map.keys.push(key); map.vals.push(val);
           this.skipNl();
           if (this.isPunct(',')) this.adv();
@@ -573,7 +904,9 @@
 
   var PREC = { '|>': 1, '||': 2, '&&': 3, '|': 4, '^': 5, '&': 6, '==': 7, '!=': 7,
                '<': 8, '>': 8, '<=': 8, '>=': 8, '<<': 9, '>>': 9, '+': 10, '-': 10,
-               '*': 11, '/': 11, '%': 11 };
+               '*': 11, '/': 11, '%': 11, '..': 8 };
+  var COMPOUND = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%',
+                   '&=': '&', '|=': '|', '^=': '^', '<<=': '<<', '>>=': '>>' };
   var CMP = new Set(['<', '>', '<=', '>=']);
   var BIT = new Set(['&', '|', '^', '<<', '>>']);
 
@@ -605,6 +938,11 @@
   function vBytes(a) { return { k: 'bytes', v: a }; }
   function vArr(a) { return { k: 'arr', v: a }; }
   function vMap(pairs) { return { k: 'map', v: pairs }; }
+  function rangeValue(lo, hi) {
+    var arr = [];
+    for (var i = lo; i < hi; i++) arr.push(vInt(i));
+    return vArr(arr);
+  }
 
   function valueEqual(a, b) {
     if (a.k !== b.k) return false;
@@ -658,6 +996,7 @@
     this.out = [];
     this.outSize = 0;
     this.steps = 0;
+    this.flow = !!opts.flow;
     this.maxSteps = opts.maxSteps || MAX_STEPS;
     this.global = new Env(null);
     this.installBuiltins();
@@ -740,21 +1079,42 @@
       define('pow', function (args, line, col) {
         return vFloat(Math.pow(num(args[0], line, col, 'pow'), num(args[1], line, col, 'pow')));
       });
+      /* 短别名：与 Python 参考实现一致，所有写法都可用 */
+      var alias = { p: 'println', s: 'str', l: 'len', r: 'range' };
+      for (var ak in alias) {
+        if (Object.prototype.hasOwnProperty.call(alias, ak)) {
+          self.global.define(ak, self.global.vars.get(alias[ak]).v, false);
+        }
+      }
     },
 
     run: function (src) {
-      var toks = tokenize(src);
-      var prog = new Parser(toks, false).parseProgram();
-      this.execProgram(prog);
-      var main = this.global.vars.get('main');
-      if (main) this.callValue(main.v, [], 0, 0);
+      var toks = tokenize(src, this.flow);
+      var prog = new Parser(toks, false, this.flow).parseProgram();
+      try {
+        this.execProgram(prog);
+        if (!prog.hasTopStmt) {
+          var main = this.global.vars.get('main');
+          if (main) this.callValue(main.v, [], 0, 0);
+        }
+      } catch (e) {
+        if (e instanceof ReturnSignal) throw new DsError('`return` / `^` 只能出现在函数体内');
+        if (e instanceof BreakSignal) throw new DsError('`break` 只能出现在循环体内');
+        if (e instanceof ContinueSignal) throw new DsError('`continue` 只能出现在循环体内');
+        throw e;
+      }
       return this.out;
     },
 
     execProgram: function (prog) {
-      for (var i = 0; i < prog.items.length; i++) {
-        var item = prog.items[i];
-        this.execStmt(this.global, item);
+      var i, item;
+      /* 0.1c：函数声明先注册（可前向引用），再由顶层语句按顺序执行 */
+      for (i = 0; i < prog.items.length; i++) {
+        item = prog.items[i];
+        if (item.type === 'Fn') this.execStmt(this.global, item);
+      }
+      for (i = 0; i < prog.items.length; i++) {
+        this.execStmt(this.global, prog.items[i]);
       }
     },
 
@@ -775,15 +1135,29 @@
         case 'Assign': {
           var value = this.evalExpr(env, node.value);
           if (node.target.type === 'Var') {
-            if (node.target.name === '_') return value;
-            env.assign(node.target.name, value, node.line, node.col);
+            var tname = node.target.name;
+            if (tname === '_') return value;
+            if (node.op) {
+              var cur = env.get(tname, node.line, node.col);
+              value = this.binop(node.op, cur, value, node.line, node.col);
+            } else if (!env.has(tname)) {
+              /* 0.1c：首次赋值定义不可变绑定（可变请用 var） */
+              env.define(tname, value, false);
+              return value;
+            }
+            env.assign(tname, value, node.line, node.col);
           } else {
             var obj = this.evalExpr(env, node.target.obj);
             var idx = this.evalExpr(env, node.target.index);
             if (obj.k === 'arr') {
-              var i = this.indexValue(obj, idx, node.line, node.col);
-              obj.v[i] = value;
+              var ai = this.indexValue(obj, idx, node.line, node.col);
+              if (node.op) value = this.binop(node.op, obj.v[ai], value, node.line, node.col);
+              obj.v[ai] = value;
             } else if (obj.k === 'map') {
+              if (node.op) {
+                var cur2 = this.mapGet(obj, idx, node.line, node.col);
+                value = this.binop(node.op, cur2, value, node.line, node.col);
+              }
               this.mapSet(obj, idx, value);
             } else throw new DsError('不可下标赋值', node.line, node.col);
           }
@@ -881,6 +1255,22 @@
         }
         case 'BlockExpr': return this.execBlock(env, node.block);
         case 'If': return this.execStmt(env, node);
+        case 'FStr': {
+          var fout = '';
+          for (var pi = 0; pi < node.parts.length; pi++) {
+            var pt = node.parts[pi];
+            fout += pt.str !== undefined ? pt.str : valueOf(this.evalExpr(env, pt.expr));
+          }
+          return vStr(fout);
+        }
+        case 'Range': {
+          var lo = this.evalExpr(env, node.lo);
+          var hi = this.evalExpr(env, node.hi);
+          if ((lo.k !== 'int' && lo.k !== 'float') || (hi.k !== 'int' && hi.k !== 'float')) {
+            throw new DsError('范围 `..` 需要数值端点', node.line, node.col);
+          }
+          return rangeValue(lo.v, hi.v);
+        }
         case 'LoopExpr': {
           for (;;) {
             this.tick(node.line, node.col);
@@ -1043,13 +1433,27 @@
   };
 
   /* ============================ 对外 API ============================ */
+  /* Flow 自动识别：#!flow 开头 / `\` 开头 / .dsf 文件名 / options.flow 强制 */
+  function detectFlow(source, options) {
+    if (options && options.flow) return true;
+    var fname = options && (options.filename || options.file);
+    if (typeof fname === 'string' && /\.dsf$/i.test(fname)) return true;
+    if (typeof source !== 'string') return false;
+    var s = source;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    s = s.replace(/^\s+/, '');
+    if (s.indexOf('\\') === 0) return true;
+    if (s.indexOf('#!flow') === 0) return true;
+    return false;
+  }
+
   function run(source, options) {
     options = options || {};
-    var lines = 1;
+    var flow = detectFlow(source, options);
     try {
-      var interp = new Interpreter(options);
+      var interp = new Interpreter({ maxSteps: options.maxSteps, flow: flow });
       interp.run(source);
-      return { ok: true, output: interp.out, steps: interp.steps, error: null };
+      return { ok: true, output: interp.out, steps: interp.steps, error: null, flow: flow };
     } catch (e) {
       if (e instanceof DsError) {
         return { ok: false, output: (typeof interp !== 'undefined' && interp ? interp.out : []),
@@ -1059,10 +1463,12 @@
     }
   }
 
-  function check(source) {
+  function check(source, options) {
+    options = options || {};
     try {
-      var toks = tokenize(source);
-      new Parser(toks, false).parseProgram();
+      var flow = detectFlow(source, options);
+      var toks = tokenize(source, flow);
+      new Parser(toks, false, flow).parseProgram();
       return { ok: true, error: null };
     } catch (e) {
       if (e instanceof DsError) return { ok: false, error: { message: e.message, line: e.line, col: e.col } };
@@ -1070,13 +1476,14 @@
     }
   }
 
-  function tokenList(source) {
-    var toks = tokenize(source);
+  function tokenList(source, options) {
+    options = options || {};
+    var toks = tokenize(source, detectFlow(source, options));
     return toks.filter(function (t) { return t.k !== 'nl'; }).map(function (t) {
       return { kind: t.k, text: String(t.text), line: t.line, col: t.col };
     });
   }
 
   return { VERSION: VERSION, KEYWORDS: KEYWORDS, run: run, check: check,
-           tokenize: tokenList, DsError: DsError, Interpreter: Interpreter };
+           tokenize: tokenList, isFlow: detectFlow, DsError: DsError, Interpreter: Interpreter };
 });
