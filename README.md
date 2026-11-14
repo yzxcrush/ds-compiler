@@ -1,20 +1,20 @@
 # Ds Compiler（Android）
 
-手机上的 **Ds v0.1 编译器**：Telegram 风格聊天界面 + Pydroid 3 式编辑器/运行/控制台。
+手机上的 **Ds v0.1 编译器**（v0.3.0）：**Pydroid 3 风格全屏编辑器** + 行号 + 符号快捷栏 + 输出控制台。
 单 Activity + WebView 外壳，Ds 词法/解析/求值全部内置在 `assets/ds.js`，**完全离线**，不需要网络权限。
 
 ## 功能
 
 | 模块 | 说明 |
 |---|---|
-| 聊天式控制台 | Telegram 风格暗色主题：代码气泡（右侧蓝色）、编译器输出气泡（左侧灰色）、错误气泡（红色），✓✓ 运行成功标记、时间戳、输出一键复制 |
-| 编辑器 | 全屏编辑器、行号、Tab 缩进、Ctrl+Enter 运行、自动保存到本地脚本 |
-| 运行 | 点 ▶ 编译并执行，输出/错误直接回帖；错误带行列号 |
-| 文件 | 多脚本本地保存（localStorage），新建/打开/删除 |
-| 示例 | hello、斐波那契、质数、集合 四个内置示例 |
-| 设置 | 字号 A− / A＋，左右滑动抽屉 |
+| 编辑器 | Pydroid 3 风格：全屏黑底编辑器、行号、文件名、自动保存草稿、Tab 缩进、Ctrl+Enter 运行 |
+| 符号快捷栏 | 键盘上方 `; ' # ( ) [ ] { } " = + - * / : , . < > _` 一键插入，左右滑动 |
+| 运行 | 右下黄色圆形 ▶；输出/错误进入底部控制台（可折叠），带行列号 |
+| 文件 | 多脚本本地保存（localStorage），新建/打开/保存/删除 |
+| 示例 | Flow hello/fib、0.1c concise、hello、fib、primes、collections 七个示例 |
+| 设置 | 字号 A− / A＋、清空输出，抽屉式菜单 |
 | AI 训练 | 内置「AI 训练教程」：上下文包 / SFT 数据 / 评测命令，链接一键复制或跳转 GitHub |
-| GitHub | 抽屉与工具栏提供仓库、规范、llms.txt、数据集、落地页的外链（外部浏览器打开） |
+| GitHub / 包 | 抽屉提供仓库、Ds+ 分支、dspm 包管理、规范、llms.txt、数据集、落地页外链 |
 | 署名 | 界面右下角与关于处显示水印 **@惜白.** |
 
 ## Ds 支持范围（编译器核心子集 + 新写法）
@@ -64,9 +64,9 @@ app/src/main/
 ├── AndroidManifest.xml
 ├── java/dev/ds/compiler/MainActivity.java   # WebView 外壳
 ├── assets/
-│   ├── index.html      # 界面结构（Telegram 风格）
-│   ├── style.css       # 暗色主题
-│   ├── ui.js           # 聊天/编辑器/文件/示例逻辑
+│   ├── index.html      # Pydroid 风格界面结构
+│   ├── style.css       # 暗色编辑器主题
+│   ├── ui.js           # 编辑器/文件/示例/控制台逻辑
 │   └── ds.js           # Ds 编译器内核（词法/解析/求值）
 └── res/                # 图标与字符串
 tests/node_test.js      # 内核单元测试（Node 直接跑）
@@ -75,7 +75,7 @@ tests/node_test.js      # 内核单元测试（Node 直接跑）
 ## 测试
 
 ```bash
-node tests/node_test.js    # 21 项内核测试
+node tests/node_test.js    # 60 项内核测试
 ```
 
 ## License

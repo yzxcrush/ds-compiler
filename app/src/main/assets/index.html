@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0E1621">
+<meta name="theme-color" content="#0b0f14">
 <title>Ds Compiler</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -11,51 +11,95 @@
 <div id="app">
   <header id="topbar">
     <button id="btnMenu" class="icon-btn" aria-label="菜单">☰</button>
-    <div class="peer">
-      <div class="avatar">Ds</div>
-      <div class="peer-text">
-        <div class="peer-name">Ds Compiler <span class="verified">✓</span></div>
-        <div class="peer-status" id="status">编译器就绪 · v0.2.1</div>
-      </div>
+    <input id="fileName" class="file-name" value="new.ds" spellcheck="false"
+           autocapitalize="off" autocomplete="off" aria-label="文件名">
+    <div class="top-actions">
+      <button id="btnOpen" class="icon-btn" aria-label="文件">📂</button>
+      <button id="btnSave" class="icon-btn" aria-label="保存">💾</button>
+      <button id="btnSamples" class="icon-btn" aria-label="示例">💡</button>
+      <button id="btnMore" class="icon-btn" aria-label="更多">⋮</button>
     </div>
-    <button id="btnFilesTop" class="icon-btn" aria-label="文件">📂</button>
   </header>
 
-  <main id="chat">
-    <div class="date-divider"><span>今天</span></div>
+  <main id="workspace">
+    <section id="editorPane">
+      <div id="gutter" class="gutter">1</div>
+      <textarea id="edCode" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" wrap="off" aria-label="代码编辑器"></textarea>
+    </section>
+
+    <section id="consolePane" class="console-pane collapsed">
+      <header class="console-head">
+        <span class="console-title">输出</span>
+        <span id="runState" class="run-state">就绪</span>
+        <button id="btnClearConsole" class="mini-btn">清屏</button>
+        <button id="btnToggleConsole" class="mini-btn" aria-label="展开输出">▴</button>
+      </header>
+      <div id="consoleOut" class="console-out" aria-live="polite"></div>
+    </section>
   </main>
 
-  <footer id="composer">
-    <div class="toolbar">
-      <button data-act="run" class="chip primary">▶ 运行</button>
-      <button data-act="new" class="chip">＋ 新建</button>
-      <button data-act="files" class="chip">📂 文件</button>
-      <button data-act="samples" class="chip">🧩 示例</button>
-      <button data-act="ai" class="chip">🧠 AI 训练</button>
-      <button data-act="github" class="chip">🔗 GitHub</button>
-      <button data-act="clear" class="chip">🧹 清屏</button>
-    </div>
-    <div class="input-row">
-      <textarea id="codeInput" rows="2" spellcheck="false" autocapitalize="off" autocomplete="off"
-        placeholder="输入 Ds 代码，点 ▶ 运行（可换行写多个语句）"></textarea>
-      <button id="btnSend" class="send-btn" aria-label="运行">▶</button>
-    </div>
-  </footer>
-</div>
-
-<div id="editor" class="hidden">
-  <header class="ed-header">
-    <button id="edClose" class="icon-btn" aria-label="关闭">✕</button>
-    <input id="edName" class="ed-name" value="untitled.ds" spellcheck="false" autocapitalize="off">
-    <button id="edSave" class="chip">保存</button>
-    <button id="edRun" class="chip primary">▶ 运行</button>
-  </header>
-  <div class="ed-body">
-    <div id="lineNumbers" class="gutter">1</div>
-    <textarea id="edCode" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+  <div id="quickKeys" class="quick-keys" aria-label="符号快捷栏">
+    <button class="sym" data-key=";">;</button>
+    <button class="sym" data-key="'">'</button>
+    <button class="sym" data-key="#">#</button>
+    <button class="sym" data-key="(">(</button>
+    <button class="sym" data-key=")">)</button>
+    <button class="sym" data-key="[">[</button>
+    <button class="sym" data-key="]">]</button>
+    <button class="sym" data-key="{">{</button>
+    <button class="sym" data-key="}">}</button>
+    <button class="sym" data-key='"'>"</button>
+    <button class="sym" data-key="=">=</button>
+    <button class="sym" data-key="+">+</button>
+    <button class="sym" data-key="-">−</button>
+    <button class="sym" data-key="*">*</button>
+    <button class="sym" data-key="/">/</button>
+    <button class="sym" data-key=":">:</button>
+    <button class="sym" data-key=",">,</button>
+    <button class="sym" data-key=".">.</button>
+    <button class="sym" data-key="&lt;">&lt;</button>
+    <button class="sym" data-key="&gt;">&gt;</button>
+    <button class="sym" data-key="_">_</button>
+    <button class="sym" data-key="    ">⇥</button>
   </div>
+
+  <footer id="statusbar">
+    <span id="cursorPos">Ln 1, Col 1</span>
+    <span id="statusMsg" class="status-msg"></span>
+    <span id="watermark">@惜白.</span>
+  </footer>
+
+  <button id="fabRun" class="fab" aria-label="运行">▶</button>
 </div>
 
+<aside id="drawer">
+  <div class="drawer-head">
+    <div class="avatar">Ds</div>
+    <div><b>Ds Compiler</b><div class="muted">v0.3.0 · Pydroid 风格 · @惜白.</div></div>
+  </div>
+  <div class="drawer-section" id="drawerFiles"><div class="drawer-title">脚本</div></div>
+  <div class="drawer-section" id="drawerSamples"><div class="drawer-title">示例</div></div>
+  <div class="drawer-section" id="drawerLinks">
+    <div class="drawer-title">AI / GitHub / 包</div>
+    <div class="drawer-item" data-open="ai"><span>🧠</span><span>AI 训练教程</span></div>
+    <div class="drawer-item" data-open="gh"><span>🔗</span><span>GitHub 仓库</span></div>
+    <div class="drawer-item" data-open="plus"><span>🧩</span><span>Ds+ 分支</span></div>
+    <div class="drawer-item" data-open="dspm"><span>📦</span><span>dspm 包管理</span></div>
+    <div class="drawer-item" data-open="llms"><span>🤖</span><span>llms.txt（AI 入口）</span></div>
+    <div class="drawer-item" data-open="spec"><span>📘</span><span>语言规范</span></div>
+    <div class="drawer-item" data-open="data"><span>🧪</span><span>训练 / 评测数据</span></div>
+    <div class="drawer-item" data-open="site"><span>🌐</span><span>项目落地页</span></div>
+  </div>
+  <div class="drawer-section">
+    <div class="drawer-title">设置</div>
+    <button id="fontMinus" class="chip">A−</button>
+    <button id="fontPlus" class="chip">A＋</button>
+    <button id="btnClearAll" class="chip">清空输出</button>
+  </div>
+  <div class="drawer-credit">by @惜白.</div>
+</aside>
+<div id="drawerMask" class="mask hidden"></div>
 
 <div id="aiPanel" class="hidden">
   <header class="ed-header ai-header">
@@ -68,19 +112,17 @@
       <h3>0. 原理：三件套</h3>
       <p>让 AI 学会 Ds，光有提示词不够，需要「可检索的上下文 + 可训练的数据 + 可执行的评测」。下面每一步都能在手机上直接复制链接或命令。</p>
     </section>
-
     <section class="ai-sec">
       <h3>1. 给模型喂上下文（RAG / 提示词）</h3>
       <div class="ai-link"><code>llms.txt</code><span class="muted">AI 入口索引</span><button data-copy-url="https://raw.githubusercontent.com/yzxcrush/ds/main/llms.txt">复制</button><a href="https://raw.githubusercontent.com/yzxcrush/ds/main/llms.txt">打开</a></div>
       <div class="ai-link"><code>LANGUAGE_CARD.md</code><span class="muted">5k token 语言卡</span><button data-copy-url="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/LANGUAGE_CARD.md">复制</button><a href="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/LANGUAGE_CARD.md">打开</a></div>
-      <div class="ai-link"><code>llms-full.txt</code><span class="muted">约 143 KB 全量上下文</span><button data-copy-url="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/llms-full.txt">复制</button><a href="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/llms-full.txt">打开</a></div>
+      <div class="ai-link"><code>llms-full.txt</code><span class="muted">约 162 KB 全量上下文</span><button data-copy-url="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/llms-full.txt">复制</button><a href="https://raw.githubusercontent.com/yzxcrush/ds/main/ai/llms-full.txt">打开</a></div>
       <div class="ai-link"><code>spec/DS-v0.1.md</code><span class="muted">完整规范</span><a href="https://github.com/yzxcrush/ds/blob/main/spec/DS-v0.1.md">打开</a></div>
       <p class="muted">推荐：把 <code>system_prompt.txt</code> 作为 system，再附语言卡；需要细节时再检索规范对应章节。</p>
       <div class="ai-code"><pre id="aiSystem">你是 Ds v0.1 专家。优先用 0.1c 精简写法：不需要 package / fn main，顶层语句即入口；
 fn f(a,b)=a+b；for i in 0..10: ...；x=1 即不可变定义，可变用 var；支持 += 等复合赋值；f"{x}" 插值。
 不要编造关键字；生成后用 dscc --check 验证。</pre><button class="copy-code" data-copy-el="aiSystem">复制提示词</button></div>
     </section>
-
     <section class="ai-sec">
       <h3>2. 用现成数据微调</h3>
       <div class="ai-link"><code>ds_sft.jsonl</code><span class="muted">41 条 chat 指令</span><button data-copy-url="https://raw.githubusercontent.com/yzxcrush/ds/main/datasets/ds_sft.jsonl">复制</button><a href="https://raw.githubusercontent.com/yzxcrush/ds/main/datasets/ds_sft.jsonl">打开</a></div>
@@ -92,21 +134,20 @@ import json
 rows = [json.loads(l) for l in open("ds_sft.jsonl", encoding="utf-8")]
 # rows[i]["messages"] 可直接喂给 TRL / LLaMA-Factory 等 chat 训练</pre><button class="copy-code" data-copy-el="aiTrain">复制代码</button></div>
     </section>
-
     <section class="ai-sec">
       <h3>3. 评测：判断 AI 真的学会了</h3>
       <p>让模型对 <code>ds_bench.jsonl</code> 的 prompt 生成完整 Ds 程序，保存为 <code>{"id":"fib","code":"..."}</code> 每行一条，然后：</p>
       <div class="ai-code"><pre id="aiBench">python3 tools/ds_bench.py --submissions sub.jsonl --json result.json
 # 输出：每个任务的 PASS/FAIL 与总分；--strict 可用于 CI</pre><button class="copy-code" data-copy-el="aiBench">复制命令</button></div>
     </section>
-
     <section class="ai-sec">
       <h3>4. 生成 → 执行 → 修正（工具闭环）</h3>
       <p>让 Agent 把编译驱动当工具用：<code>dscc file.ds --check</code> 只做解析检查，<code>dscc file.ds</code> 解释执行。生成的代码先 check 再运行，错误定位精确到行列。</p>
       <div class="ai-link"><code>GitHub 仓库</code><span class="muted">规范 / 驱动 / 数据</span><a href="https://github.com/yzxcrush/ds">打开</a></div>
+      <div class="ai-link"><code>Ds+ 分支</code><span class="muted">16 个 @ 令牌 / 裸机后端</span><a href="https://github.com/yzxcrush/ds/tree/ds-plus">打开</a></div>
+      <div class="ai-link"><code>dspm 包管理</code><span class="muted">dspm install ds-hello</span><a href="https://github.com/yzxcrush/ds/blob/main/docs/DSPM.md">打开</a></div>
       <div class="ai-link"><code>落地页</code><span class="muted">英文介绍</span><a href="https://yzxcrush.github.io/ds/">打开</a></div>
     </section>
-
     <section class="ai-sec">
       <h3>5. 注意</h3>
       <ul class="ai-notes">
@@ -119,33 +160,7 @@ rows = [json.loads(l) for l in open("ds_sft.jsonl", encoding="utf-8")]
   </div>
 </div>
 
-<div id="drawerMask" class="mask hidden"></div>
-<aside id="drawer" class="drawer">
-  <div class="drawer-head">
-    <div class="avatar">Ds</div>
-    <div><b>Ds Compiler</b><div class="muted">v0.2.1 · 内置编译器 · by @惜白.</div></div>
-  </div>
-  <div class="drawer-section" id="drawerFiles"><div class="drawer-title">我的脚本</div></div>
-  <div class="drawer-section" id="drawerSamples"><div class="drawer-title">示例</div></div>
-  <div class="drawer-section" id="drawerAi">
-    <div class="drawer-title">AI 训练 / GitHub</div>
-    <div class="drawer-item" data-open="ai"><span>🧠</span><span class="fname">AI 训练教程</span></div>
-    <div class="drawer-item" data-open="gh"><span>🔗</span><span class="fname">GitHub 仓库</span></div>
-    <div class="drawer-item" data-open="spec"><span>📘</span><span class="fname">语言规范</span></div>
-    <div class="drawer-item" data-open="llms"><span>🤖</span><span class="fname">llms.txt（AI 入口）</span></div>
-    <div class="drawer-item" data-open="data"><span>🧪</span><span class="fname">训练 / 评测数据</span></div>
-    <div class="drawer-item" data-open="site"><span>🌐</span><span class="fname">项目落地页</span></div>
-  </div>
-  <div class="drawer-section">
-    <div class="drawer-title">设置</div>
-    <button id="fontMinus" class="chip">A−</button>
-    <button id="fontPlus" class="chip">A＋</button>
-  </div>
-  <div class="drawer-section drawer-credit"><span class="muted">by @惜白. · v0.2.1</span></div>
-</aside>
-
 <script src="ds.js"></script>
 <script src="ui.js"></script>
-<div class="watermark" aria-hidden="true">@惜白.</div>
 </body>
 </html>
