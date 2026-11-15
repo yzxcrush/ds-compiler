@@ -30,6 +30,9 @@ jobs:
           ls "$ANDROID_HOME/platforms" || true
           ls "$ANDROID_HOME/build-tools" || true
 
+      - name: Run compiler kernel tests
+        run: node tests/node_test.js
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
@@ -48,6 +51,7 @@ jobs:
           body: |
             自动构建的 Ds Compiler Android APK（debug 签名，可直接安装）。
             支持 Ds v0.1 编译器核心子集：函数/数组/映射/控制流/管道等。
+本版增强编译器严格性：返回类型/参数类型/`let` 标注/缺失返回/条件/重复定义等在运行前拒绝。
           files: app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false

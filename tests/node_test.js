@@ -85,5 +85,17 @@ expectError('flow-missing-dot', '#!flow\n\\f x\n  x', "'.'");
 expectCheck('flow-check', '#!flow\np (f 1)', true);
 expectCheck('flow-check-bad', '#!flow\n\\f x = x\np (f 1', false);
 
+/* 严格性回归：明显非法必须拒绝 */
+expectError('strict-return-type', 'fn f() -> i32 { "x" }\nfn main() { p(f()) }', '返回类型');
+expectError('strict-let-type', 'fn main() { let x: i32 = "s"; p(x) }', '类型不匹配');
+expectError('strict-missing-return', 'fn f() -> i32 { }\nfn main() { p(f()) }', '没有 return');
+expectError('strict-top-return', 'return 1\np("after")', '只能出现在函数内');
+expectError('strict-break', 'break\np("after")', '只能出现在循环内');
+expectError('strict-duplicate', 'fn main() { let a: i32 = 1; let a: i32 = 2; p(a) }', '重复定义');
+expectError('strict-arg-type', 'fn f(a: i32) { p(a) }\nfn main() { f("s") }', '类型不匹配');
+expectError('strict-cond', 'fn main() { if 1 { p("yes") } }', '条件必须是 bool');
+expectCheck('strict-check-bad', 'fn f() -> i32 { }', false);
+expectCheck('strict-check-good', 'fn f() -> i32 { 1 }\np(f())', true);
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);

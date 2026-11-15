@@ -309,6 +309,30 @@
       }
     },
 
+    readType: function () {
+      this.skipNl();
+      var parts = [], depth = 0;
+      for (;;) {
+        var t = this.cur();
+        if (t.k === 'eof') break;
+        if (depth === 0 && t.k === 'nl') break;
+        if (depth === 0) {
+          if (t.k === 'punct' && (t.text === ',' || t.text === ')' || t.text === '=' ||
+              t.text === '{' || t.text === ';' || t.text === ':')) break;
+          if (t.k === 'op' && (t.text === '=' || t.text === '=>' || t.text === '->')) break;
+          if (t.k === 'kw' && (t.text === 'where' || t.text === '->')) break;
+        }
+        if (t.k === 'punct' && (t.text === '[' || t.text === '(' || t.text === '{')) depth++;
+        else if (t.k === 'punct' && (t.text === ']' || t.text === ')' || t.text === '}')) {
+          if (depth === 0) break;
+          depth--;
+        }
+        parts.push(String(t.text));
+        this.adv();
+      }
+      return parts.join('');
+    },
+
     skipType: function () {
       this.skipNl();
       var depth = 0;
@@ -361,9 +385,10 @@
       var t = this.cur(); this.adv();
       var name = this.expectIdent('函数名');
       var params = this.parseParams();
-      var node = { type: 'Fn', name: name, params: params, body: null, line: t.line, col: t.col };
+      var node = { type: 'Fn', name: name, params: params, body: null, ret: null,
+                   line: t.line, col: t.col };
       this.skipNl();
-      if (this.isKw('->')) { this.adv(); this.skipType(); }
+      if (this.isKw('->')) { this.adv(); node.ret = this.readType(); }
       this.skipNl();
       if (this.isKw('where')) while (!this.isPunct('{') && this.cur().k !== 'eof') this.adv();
       node.body = this.parseFnBody();
@@ -397,12 +422,12 @@
           var t = this.cur();
           if (t.k !== 'ident') this.fail('期望参数名，得到 ' + t.text);
           var name = t.v; this.adv();
-          var def = null;
+          var def = null, ptype = null;
           this.skipNl();
-          if (this.isPunct(':')) { this.adv(); this.skipType(); }
+          if (this.isPunct(':')) { this.adv(); ptype = this.readType(); }
           this.skipNl();
           if (this.isOp('=')) { this.adv(); def = this.parseExpr(1); }
-          params.push({ name: name, def: def });
+          params.push({ name: name, def: def, type: ptype });
           this.skipNl();
           if (this.isPunct(',')) { this.adv(); continue; }
           break;
@@ -460,11 +485,13 @@
       this.adv();
       var name = this.expectIdent('变量名');
       this.skipNl();
-      if (this.isPunct(':')) { this.adv(); this.skipType(); }
+      var ltype = null;
+      if (this.isPunct(':')) { this.adv(); ltype = this.readType(); }
       this.skipNl();
       var init = null;
       if (this.isOp('=')) { this.adv(); init = this.parseExpr(1); }
-      return { type: 'Let', name: name, init: init, mutable: isMut, line: t.line, col: t.col };
+      return { type: 'Let', name: name, init: init, mutable: isMut,
+               ann: ltype, line: t.line, col: t.col };
     },
 
     parseStmt: function () {
@@ -991,6 +1018,288 @@
   function ReturnSignal(v) { this.value = v; }
 
   /* ============================ 解释器 ============================ */
+
+  /* ===================== 语义检查（编译前） ===================== */
+  var INT_TYPES = {
+    i8: [-128, 127], i16: [-32768, 32767], i32: [-2147483648, 2147483647],
+    u8: [0, 255], u16: [0, 65535], u32: [0, 4294967295],
+    i64: [-9007199254740992, 9007199254740992],
+    u64: [0, 9007199254740992], isize: [-9007199254740992, 9007199254740992],
+    usize: [0, 9007199254740992]
+  };
+  var BUILTIN_RET = {
+    len: 'int', str: 'str', concat: 'str', format: 'str', range: 'array',
+    error: 'error', ok: 'res', err: 'res', println: 'unit', print: 'unit',
+    abs: 'int', pow: 'float', 'math.sqrt': 'float', 'math.round': 'float',
+    'math.floor': 'float', 'math.ceil': 'float', 'math.abs': 'float', 'math.pow': 'float'
+  };
+
+  function tname(t) {
+    if (!t) return null;
+    t = String(t).replace(/\s+/g, '');
+    return t === 'void' ? 'unit' : t;
+  }
+  function litType(node) {
+    if (node.kind === 'bool') return 'bool';
+    if (node.kind === 'int') return 'int';
+    if (node.kind === 'float') return 'float';
+    if (node.kind === 'str') return 'str';
+    if (node.kind === 'bytes') return 'bytes';
+    return '?';
+  }
+  function compat(actual, expected, lit) {
+    if (!actual || !expected) return true;
+    if (expected === 'unit') return actual === 'unit' || actual === '?';
+    if (INT_TYPES[expected]) {
+      if (['int', 'i32', 'u32', 'i64', 'u64', 'i8', 'i16', 'u8', 'u16', 'isize', 'usize'].indexOf(actual) < 0) return false;
+      if (lit && lit.kind === 'bool') return false;
+      if (lit && lit.kind === 'int') {
+        var r = INT_TYPES[expected];
+        return lit.value >= r[0] && lit.value <= r[1];
+      }
+      return true;
+    }
+    if (expected === 'f32' || expected === 'f64') return actual === 'float';
+    if (expected === 'bool' || expected === 'str' || expected === 'bytes') return actual === expected;
+    if (expected.charAt(0) === '[') return actual === 'array' || actual === '?';
+    if (['opt', 'res', 'ptr', 'ref', 'raw', 'fn', 'dyn', '!'].indexOf(expected) >= 0) return true;
+    return actual === expected || actual === '?' || ['int', 'bool', 'str', 'float', 'unit'].indexOf(actual) < 0;
+  }
+
+  function Scope(parent, ret) {
+    this.types = {}; this.mutable = {}; this.parent = parent || null;
+    this.loop = 0; this.ret = ret || null;
+  }
+  Scope.prototype.get = function (name) {
+    var s = this;
+    while (s) { if (Object.prototype.hasOwnProperty.call(s.types, name)) return s.types[name]; s = s.parent; }
+    return null;
+  };
+  Scope.prototype.has = function (name) {
+    var s = this;
+    while (s) { if (Object.prototype.hasOwnProperty.call(s.types, name)) return true; s = s.parent; }
+    return false;
+  };
+  Scope.prototype.isMut = function (name) {
+    var s = this;
+    while (s) {
+      if (Object.prototype.hasOwnProperty.call(s.types, name)) return !!s.mutable[name];
+      s = s.parent;
+    }
+    return null;
+  };
+  Scope.prototype.child = function () { var c = new Scope(this, this.ret); c.loop = this.loop; return c; };
+
+  function validateProgram(prog) {
+    var sigs = {};
+    var i, item;
+    for (i = 0; i < prog.items.length; i++) {
+      item = prog.items[i];
+      if (item.type === 'Fn') sigs[item.name] = { params: item.params || [], ret: tname(item.ret) };
+    }
+    var top = new Scope(null, null);
+    for (i = 0; i < prog.items.length; i++) {
+      item = prog.items[i];
+      if (item.type === 'Fn') checkFn(item, sigs);
+      else if (item.type === 'Let') checkTopLet(item, top, sigs);
+      else checkStmt(item, top, false, null, sigs);
+    }
+  }
+
+  function checkErr(msg, node) { throw new DsError(msg, node.line || 0, node.col || 0); }
+
+  function checkTopLet(node, scope, sigs) {
+    if (scope.has(node.name)) checkErr('顶层重复定义 `' + node.name + '`', node);
+    var actual = infer(node.init, scope, sigs);
+    var typ = tname(node.ann);
+    if (typ && !compat(actual, typ, node.init)) checkErr('`' + node.name + '` 类型不匹配：标注 ' + typ + '，实际 ' + (actual || '?'), node);
+    scope.types[node.name] = typ || actual || null;
+    if (node.mutable) scope.mutable[node.name] = true;
+  }
+
+  function checkFn(fn, sigs) {
+    var scope = new Scope(null, tname(fn.ret));
+    for (var i = 0; i < fn.params.length; i++) {
+      var p = fn.params[i];
+      scope.types[p.name] = tname(p.type) || null;
+    }
+    var ret = tname(fn.ret);
+    var body = fn.body;
+    var returns = [];
+    var hasTail = false;
+    if (body && body.type === 'Block') {
+      for (var j = 0; j < body.stmts.length; j++) {
+        var st = body.stmts[j];
+        checkStmt(st, scope, true, returns, sigs);
+        if (st.type === 'ExprStmt' || st.type === 'Return' || st.type === 'If' || st.type === 'LoopExpr') hasTail = true;
+      }
+      var last = body.stmts.length ? body.stmts[body.stmts.length - 1] : null;
+      if (last && ret && ret !== 'unit' && ret !== '!' &&
+          (last.type === 'ExprStmt' || last.type === 'If' || last.type === 'LoopExpr')) {
+        var actual = last.type === 'ExprStmt' ? infer(last.expr, scope, sigs) : infer(last, scope, sigs);
+        if (!compat(actual, ret)) checkErr('函数 `' + fn.name + '` 返回类型不匹配：期望 ' + ret + '，尾表达式为 ' + (actual || '?'), last);
+      }
+      if (ret && ret !== 'unit' && ret !== '!' && !hasTail) {
+        checkErr('函数 `' + fn.name + '` 声明返回 ' + ret + '，但没有 return 或尾表达式', fn);
+      }
+    }
+  }
+
+  function checkStmt(st, scope, inFunc, returns, sigs) {
+    if (!st) return;
+    var i, child;
+    switch (st.type) {
+      case 'Let': {
+        var typ = tname(st.ann);
+        var actual = st.init ? infer(st.init, scope, sigs) : 'unit';
+        if (typ && !compat(actual, typ, st.init)) checkErr('`' + st.name + '` 类型不匹配：标注 ' + typ + '，实际 ' + (actual || '?'), st);
+        if (scope.has(st.name)) checkErr('同一作用域重复定义 `' + st.name + '`', st);
+        scope.types[st.name] = typ || actual || null;
+        if (st.mutable) scope.mutable[st.name] = true;
+        return;
+      }
+      case 'Assign': {
+        var av = infer(st.value, scope, sigs);
+        if (st.target && st.target.type === 'Var') {
+          var mut = scope.isMut(st.target.name);
+          if (mut === false) checkErr('`' + st.target.name + '` 不可变，不能赋值（用 var 声明）', st);
+          var tt = scope.get(st.target.name);
+          if (tt && av && !compat(av, tt)) checkErr('赋值类型不匹配：目标 ' + tt + '，值 ' + av, st);
+        }
+        return;
+      }
+      case 'ExprStmt': infer(st.expr, scope, sigs); return;
+      case 'Return':
+        if (!inFunc) checkErr('`return` 只能出现在函数内', st);
+        if (returns) returns.push(st);
+        if (st.value) {
+          var rv = infer(st.value, scope, sigs);
+          var rt = scope.ret;
+          if (rt && rt !== 'unit' && rt !== '!' && !compat(rv, rt)) checkErr('`return` 类型不匹配：期望 ' + rt + '，实际 ' + (rv || '?'), st);
+          if (rt === 'unit' && rv && rv !== 'unit' && rv !== '?') checkErr('函数声明返回 unit，但 return 了 ' + rv, st);
+        } else if (scope.ret && scope.ret !== 'unit' && scope.ret !== '!') {
+          checkErr('函数声明返回 ' + scope.ret + '，return 需要值', st);
+        }
+        return;
+      case 'If':
+        checkCond(st.cond, scope, st, sigs);
+        checkBlock(st.then, scope.child(), inFunc, returns, sigs);
+        if (st.else) {
+          if (st.else.type === 'Block') checkBlock(st.else, scope.child(), inFunc, returns, sigs);
+          else checkStmt(st.else, scope.child(), inFunc, returns, sigs);
+        }
+        return;
+      case 'While':
+        checkCond(st.cond, scope, st, sigs);
+        child = scope.child(); child.loop++;
+        checkBlock(st.body, child, inFunc, returns, sigs); return;
+      case 'Loop':
+        child = scope.child(); child.loop++;
+        checkBlock(st.body, child, inFunc, returns, sigs); return;
+      case 'For':
+        infer(st.iter, scope, sigs);
+        child = scope.child(); child.loop++;
+        if (st.name && st.name !== '_') child.types[st.name] = null;
+        checkBlock(st.body, child, inFunc, returns, sigs); return;
+      case 'Break': case 'Continue':
+        if (scope.loop <= 0) checkErr('`break`/`continue` 只能出现在循环内', st);
+        return;
+      case 'Block': checkBlock(st, scope.child(), inFunc, returns, sigs); return;
+      default:
+        if (st.expr) infer(st.expr, scope, sigs);
+    }
+  }
+
+  function checkBlock(block, scope, inFunc, returns, sigs) {
+    if (!block) return;
+    for (var i = 0; i < block.stmts.length; i++) checkStmt(block.stmts[i], scope, inFunc, returns, sigs);
+  }
+
+  function checkCond(cond, scope, node, sigs) {
+    var t = infer(cond, scope, sigs);
+    if (t && t !== 'bool' && t !== '?') checkErr('条件必须是 bool，实际是 ' + t, node);
+  }
+
+  function infer(e, scope, sigs) {
+    if (!e) return 'unit';
+    switch (e.type) {
+      case 'Lit': return litType(e);
+      case 'FStr':
+        for (var i = 0; i < e.parts.length; i++) if (e.parts[i].expr) infer(e.parts[i].expr, scope, sigs);
+        return 'str';
+      case 'Var': return scope.get(e.name);
+      case 'Call': {
+        for (var j = 0; j < e.args.length; j++) infer(e.args[j], scope, sigs);
+        if (e.callee && e.callee.type === 'Var' && sigs[e.callee.name]) {
+          var sig = sigs[e.callee.name];
+          var required = 0;
+          for (var k = 0; k < sig.params.length; k++) if (!sig.params[k].def) required++;
+          if (e.args.length < required || e.args.length > sig.params.length) {
+            checkErr('`' + e.callee.name + '` 参数个数不匹配（期望 ' + required + '..' + sig.params.length + '，实际 ' + e.args.length + '）', e);
+          }
+          for (var m = 0; m < Math.min(e.args.length, sig.params.length); m++) {
+            var pt = tname(sig.params[m].type);
+            var at = infer(e.args[m], scope, sigs);
+            if (pt && !compat(at, pt, e.args[m])) {
+              checkErr('调用 `' + e.callee.name + '` 参数 `' + sig.params[m].name + '` 类型不匹配：期望 ' + pt + '，实际 ' + (at || '?'), e.args[m]);
+            }
+          }
+          return sig.ret;
+        }
+        if (e.callee && e.callee.type === 'Var') return BUILTIN_RET[e.callee.name] || null;
+        return null;
+      }
+      case 'Binary': {
+        if (e.op === '|>') {
+          infer(e.left, scope, sigs);
+          if (e.right && e.right.type === 'Call') {
+            for (var pi = 0; pi < e.right.args.length; pi++) infer(e.right.args[pi], scope, sigs);
+            if (e.right.callee && e.right.callee.type === 'Var' && sigs[e.right.callee.name]) return sigs[e.right.callee.name].ret;
+            if (e.right.callee && e.right.callee.type === 'Var') return BUILTIN_RET[e.right.callee.name] || null;
+            return null;
+          }
+          return infer(e.right, scope, sigs);
+        }
+        var lt = infer(e.left, scope, sigs), rt = infer(e.right, scope, sigs);
+        if (['==', '!=', '<', '>', '<=', '>=', '&&', '||'].indexOf(e.op) >= 0) return 'bool';
+        if (e.op === '+' && (lt === 'str' || rt === 'str')) {
+          if (lt && lt !== 'str' && lt !== '?') checkErr('`+` 类型不匹配：字符串只能与字符串相加', e);
+          if (rt && rt !== 'str' && rt !== '?') checkErr('`+` 类型不匹配：字符串只能与字符串相加', e);
+          return 'str';
+        }
+        if (lt === 'bool' || rt === 'bool' || lt === 'str' || rt === 'str') checkErr('`' + e.op + '` 不支持 ' + (lt || '?') + ' 与 ' + (rt || '?'), e);
+        if (lt === 'float' || rt === 'float') return 'float';
+        if (lt || rt) return 'int';
+        return null;
+      }
+      case 'Unary': infer(e.expr, scope, sigs); return e.op === '!' ? 'bool' : null;
+      case 'If': {
+        checkCond(e.cond, scope, e, sigs);
+        var a = blockValue(e.then, scope, sigs);
+        if (e.else) {
+          var b = e.else.type === 'Block' ? blockValue(e.else, scope, sigs) : infer(e.else, scope, sigs);
+          return a === b ? a : null;
+        }
+        return null;
+      }
+      case 'BlockExpr': return blockValue(e.block, scope, sigs);
+      case 'Array': for (var n = 0; n < e.items.length; n++) infer(e.items[n], scope, sigs); return 'array';
+      case 'Map': return 'map';
+      case 'Range': return 'array';
+      case 'CallExpr': return infer(e, scope, sigs);
+      default: return null;
+    }
+  }
+  function blockValue(block, scope, sigs) {
+    var last = null;
+    for (var i = 0; i < block.stmts.length; i++) {
+      var st = block.stmts[i];
+      if (st.type === 'ExprStmt') last = infer(st.expr, scope, sigs);
+      else { checkStmt(st, scope, false, null, sigs); last = null; }
+    }
+    return last;
+  }
+
   function Interpreter(opts) {
     opts = opts || {};
     this.out = [];
@@ -1091,6 +1400,7 @@
     run: function (src) {
       var toks = tokenize(src, this.flow);
       var prog = new Parser(toks, false, this.flow).parseProgram();
+      validateProgram(prog);
       try {
         this.execProgram(prog);
         if (!prog.hasTopStmt) {
@@ -1468,7 +1778,8 @@
     try {
       var flow = detectFlow(source, options);
       var toks = tokenize(source, flow);
-      new Parser(toks, false, flow).parseProgram();
+      var prog = new Parser(toks, false, flow).parseProgram();
+      validateProgram(prog);
       return { ok: true, error: null };
     } catch (e) {
       if (e instanceof DsError) return { ok: false, error: { message: e.message, line: e.line, col: e.col } };
