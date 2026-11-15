@@ -94,6 +94,9 @@ expectError('strict-break', 'break\np("after")', '只能出现在循环内');
 expectError('strict-duplicate', 'fn main() { let a: i32 = 1; let a: i32 = 2; p(a) }', '重复定义');
 expectError('strict-arg-type', 'fn f(a: i32) { p(a) }\nfn main() { f("s") }', '类型不匹配');
 expectError('strict-cond', 'fn main() { if 1 { p("yes") } }', '条件必须是 bool');
+expectError('strict-narrow', 'fn bar() { let x: i32 = 1; let y: u8 = x }', '类型不匹配');
+expectError('strict-widen', 'fn bar() { let x: u8 = 1; let y: u32 = x }', '类型不匹配');
+expectError('strict-inferred', 'fn bar() { let x = 1; let y: u8 = x }', '类型不匹配');
 expectCheck('strict-check-bad', 'fn f() -> i32 { }', false);
 expectCheck('strict-check-good', 'fn f() -> i32 { 1 }\np(f())', true);
 

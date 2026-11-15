@@ -1041,7 +1041,7 @@
   }
   function litType(node) {
     if (node.kind === 'bool') return 'bool';
-    if (node.kind === 'int') return 'int';
+    if (node.kind === 'int') return 'intlit';
     if (node.kind === 'float') return 'float';
     if (node.kind === 'str') return 'str';
     if (node.kind === 'bytes') return 'bytes';
@@ -1051,13 +1051,15 @@
     if (!actual || !expected) return true;
     if (expected === 'unit') return actual === 'unit' || actual === '?';
     if (INT_TYPES[expected]) {
-      if (['int', 'i32', 'u32', 'i64', 'u64', 'i8', 'i16', 'u8', 'u16', 'isize', 'usize'].indexOf(actual) < 0) return false;
-      if (lit && lit.kind === 'bool') return false;
-      if (lit && lit.kind === 'int') {
-        var r = INT_TYPES[expected];
-        return lit.value >= r[0] && lit.value <= r[1];
+      if (actual === 'intlit') {
+        if (lit && lit.kind === 'bool') return false;
+        if (lit && lit.kind === 'int') {
+          var r = INT_TYPES[expected];
+          return lit.value >= r[0] && lit.value <= r[1];
+        }
+        return true;
       }
-      return true;
+      return actual === expected;
     }
     if (expected === 'f32' || expected === 'f64') return actual === 'float';
     if (expected === 'bool' || expected === 'str' || expected === 'bytes') return actual === expected;
@@ -1113,7 +1115,7 @@
     var actual = infer(node.init, scope, sigs);
     var typ = tname(node.ann);
     if (typ && !compat(actual, typ, node.init)) checkErr('`' + node.name + '` 类型不匹配：标注 ' + typ + '，实际 ' + (actual || '?'), node);
-    scope.types[node.name] = typ || actual || null;
+    scope.types[node.name] = typ || (actual === 'intlit' ? 'i32' : actual) || null;
     if (node.mutable) scope.mutable[node.name] = true;
   }
 
@@ -1154,7 +1156,7 @@
         var actual = st.init ? infer(st.init, scope, sigs) : 'unit';
         if (typ && !compat(actual, typ, st.init)) checkErr('`' + st.name + '` 类型不匹配：标注 ' + typ + '，实际 ' + (actual || '?'), st);
         if (scope.has(st.name)) checkErr('同一作用域重复定义 `' + st.name + '`', st);
-        scope.types[st.name] = typ || actual || null;
+        scope.types[st.name] = typ || (actual === 'intlit' ? 'i32' : actual) || null;
         if (st.mutable) scope.mutable[st.name] = true;
         return;
       }
@@ -1269,7 +1271,12 @@
         }
         if (lt === 'bool' || rt === 'bool' || lt === 'str' || rt === 'str') checkErr('`' + e.op + '` 不支持 ' + (lt || '?') + ' 与 ' + (rt || '?'), e);
         if (lt === 'float' || rt === 'float') return 'float';
-        if (lt || rt) return 'int';
+        var isInt = function (x) { return x === 'intlit' || !!(x && INT_TYPES[x]); };
+        if (isInt(lt) && isInt(rt)) {
+          if (lt === 'intlit') return rt;
+          if (rt === 'intlit') return lt;
+          return lt === rt ? lt : null;
+        }
         return null;
       }
       case 'Unary': infer(e.expr, scope, sigs); return e.op === '!' ? 'bool' : null;
