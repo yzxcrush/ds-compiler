@@ -124,5 +124,7 @@ expectError('if-mixed', 'let x = if true { 1 } else { "s" }\np(x)', 'if 分支�
 expectError('u8-negative', 'let x: u8 = -1\np(x)', '类型不匹配');
 expect('hex-escape', 'p("\\x41")', 'A\n');
 
+expect('shadow-scope', 'let x = 1\nfn f() { let x = 2; p(x) }\nf()\np(x)\n', '2\n1\n');
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);
