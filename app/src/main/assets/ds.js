@@ -13,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.3.6';
+  var VERSION = '0.3.7';
   var MAX_STEPS = 50 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -1172,15 +1172,31 @@
     if (node.kind === 'bytes') return 'bytes';
     return '?';
   }
+  function constInt(node) {
+    if (!node) return null;
+    if (node.type === 'Lit' && node.kind === 'int') return node.value;
+    if (node.type === 'Unary' && node.op === '-' && node.expr) {
+      var v = constInt(node.expr); return v === null ? null : -v;
+    }
+    if (node.type === 'Binary' && node.left && node.right) {
+      var a = constInt(node.left), b = constInt(node.right);
+      if (a === null || b === null) return null;
+      if (node.op === '+') return a + b;
+      if (node.op === '-') return a - b;
+      if (node.op === '*') return a * b;
+    }
+    return null;
+  }
   function compat(actual, expected, lit) {
     if (!actual || !expected) return true;
     if (expected === 'unit') return actual === 'unit' || actual === '?';
     if (INT_TYPES[expected]) {
       if (actual === 'intlit') {
         if (lit && lit.kind === 'bool') return false;
-        if (lit && lit.kind === 'int') {
+        var lv = constInt(lit);
+        if (lv !== null) {
           var r = INT_TYPES[expected];
-          return lit.value >= r[0] && lit.value <= r[1];
+          return lv >= r[0] && lv <= r[1];
         }
         return true;
       }
@@ -1404,7 +1420,7 @@
         }
         return null;
       }
-      case 'Unary': infer(e.expr, scope, sigs); return e.op === '!' ? 'bool' : null;
+      case 'Unary': { var ut = infer(e.expr, scope, sigs); return e.op === '!' ? 'bool' : ut; }
       case 'If': {
         checkCond(e.cond, scope, e, sigs);
         var a = blockValue(e.then, scope, sigs);

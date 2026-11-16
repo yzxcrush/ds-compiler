@@ -121,5 +121,8 @@ expect('bitwise-64', 'p(1 << 31); p(~0); p(-8 >> 1)', '2147483648\n-1\n-4\n');
 expectError('array-mixed', 'p([1, "x"])', '数组元素类型不一致');
 expectError('if-mixed', 'let x = if true { 1 } else { "s" }\np(x)', 'if 分支类型不一致');
 
+expectError('u8-negative', 'let x: u8 = -1\np(x)', '类型不匹配');
+expect('hex-escape', 'p("\\x41")', 'A\n');
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);
