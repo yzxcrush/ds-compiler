@@ -13,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.3.7';
+  var VERSION = '0.3.8';
   var MAX_STEPS = 50 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -1116,6 +1116,13 @@
     }
   }
 
+  function checkIntRange(val, type, line, col, what) {
+    if (!type || !INT_TYPES[type] || !val || val.k !== 'int') return;
+    var r = INT_TYPES[type];
+    if (val.v < r[0] || val.v > r[1]) {
+      throw new DsError('`' + what + '` 溢出 ' + type + '：' + val.v + ' 不在 [' + r[0] + ', ' + r[1] + ']', line, col);
+    }
+  }
   function Env(parent) { this.vars = new Map(); this.parent = parent || null; }
   Env.prototype.get = function (name, line, col) {
     for (var e = this; e; e = e.parent) if (e.vars.has(name)) return e.vars.get(name).v;
@@ -1125,12 +1132,19 @@
     for (var e = this; e; e = e.parent) if (e.vars.has(name)) return true;
     return false;
   };
-  Env.prototype.define = function (name, val, mutable) { this.vars.set(name, { v: val, mutable: !!mutable }); };
+  Env.prototype.define = function (name, val, mutable, type) {
+    this.vars.set(name, { v: val, mutable: !!mutable, type: type || null });
+  };
+  Env.prototype.typeOf = function (name) {
+    for (var e = this; e; e = e.parent) if (e.vars.has(name)) return e.vars.get(name).type || null;
+    return null;
+  };
   Env.prototype.assign = function (name, val, line, col) {
     for (var e = this; e; e = e.parent) {
       if (e.vars.has(name)) {
         var slot = e.vars.get(name);
         if (!slot.mutable) throw new DsError('`' + name + '` 不可变，不能赋值（用 var 声明）', line, col);
+        checkIntRange(val, slot.type, line, col, name);
         slot.v = val;
         return;
       }
@@ -1645,27 +1659,29 @@
       this.tick(node.line, node.col);
       switch (node.type) {
         case 'Fn':
-          env.define(node.name, { k: 'func', name: node.name, params: node.params, body: node.body, env: env }, false);
+          env.define(node.name, { k: 'func', name: node.name, params: node.params, body: node.body, env: env, ret: tname(node.ret) }, false);
           return vUnit();
         case 'Let': {
           var val = node.init ? this.evalExpr(env, node.init) : vUnit();
-          env.define(node.name, val, node.mutable);
+          var ltype = tname(node.ann);
+          checkIntRange(val, ltype, node.line, node.col, node.name);
+          env.define(node.name, val, node.mutable, ltype);
           return vUnit();
         }
         case 'Assign': {
           var value = this.evalExpr(env, node.value);
           if (node.target.type === 'Var') {
-            var tname = node.target.name;
-            if (tname === '_') return value;
+            var targetName = node.target.name;
+            if (targetName === '_') return value;
             if (node.op) {
-              var cur = env.get(tname, node.line, node.col);
+              var cur = env.get(targetName, node.line, node.col);
               value = this.binop(node.op, cur, value, node.line, node.col);
-            } else if (!env.has(tname)) {
+            } else if (!env.has(targetName)) {
               /* 0.1c：首次赋值定义不可变绑定（可变请用 var） */
-              env.define(tname, value, false);
+              env.define(targetName, value, false);
               return value;
             }
-            env.assign(tname, value, node.line, node.col);
+            env.assign(targetName, value, node.line, node.col);
           } else {
             var obj = this.evalExpr(env, node.target.obj);
             var idx = this.evalExpr(env, node.target.index);
@@ -1949,14 +1965,19 @@
         if (i < args.length) val = args[i];
         else if (f.params[i].def) val = this.evalExpr(env, f.params[i].def);
         else throw new DsError('`' + f.name + '` 缺少实参 `' + f.params[i].name + '`', line, col);
-        env.define(f.params[i].name, val, false);
+        var ptype = tname(f.params[i].type);
+        checkIntRange(val, ptype, line, col, f.params[i].name);
+        env.define(f.params[i].name, val, false, ptype);
       }
+      var result;
       try {
-        return this.execBlock(env, f.body);
+        result = this.execBlock(env, f.body);
       } catch (e) {
-        if (e instanceof ReturnSignal) return e.value;
-        throw e;
+        if (e instanceof ReturnSignal) result = e.value;
+        else throw e;
       }
+      checkIntRange(result, f.ret, line, col, f.name);
+      return result;
     }
   };
 

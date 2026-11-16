@@ -126,5 +126,10 @@ expect('hex-escape', 'p("\\x41")', 'A\n');
 
 expect('shadow-scope', 'let x = 1\nfn f() { let x = 2; p(x) }\nf()\np(x)\n', '2\n1\n');
 
+expectError('b1-u8-assign-overflow', 'var x: u8 = 255\nx = x + 1\np(x)', '溢出');
+expect('b1-u8-max', 'var x: u8 = 254\nx = x + 1\np(x)', '255\n');
+expectError('b1-u8-param', 'fn f(x: u8) { p(x) }\nf(300)', '类型不匹配');
+expectError('b1-u8-return', 'fn f() -> u8 { 300 }\np(f())', '溢出');
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);

@@ -1,6 +1,6 @@
 # Ds Compiler（Android）
 
-手机上的 **Ds v0.1 编译器**（v0.3.4）：**Pydroid 3 风格全屏编辑器** + 行号 + 符号快捷栏 + 输出控制台。
+手机上的 **Ds v0.1 编译器**（v0.3.8）：**Pydroid 3 风格全屏编辑器** + 行号 + 符号快捷栏 + 输出控制台。
 单 Activity + WebView 外壳，Ds 词法/解析/求值全部内置在 `assets/ds.js`，**完全离线**，不需要网络权限。
 
 ## 功能
@@ -81,7 +81,7 @@ tests/node_test.js      # 内核单元测试（Node 直接跑）
 ## 测试
 
 ```bash
-node tests/node_test.js    # 86 项内核测试
+node tests/node_test.js    # 96 项内核测试
 ```
 
 ## License
