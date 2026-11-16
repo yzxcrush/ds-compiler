@@ -100,5 +100,19 @@ expectError('strict-inferred', 'fn bar() { let x = 1; let y: u8 = x }', '类型�
 expectCheck('strict-check-bad', 'fn f() -> i32 { }', false);
 expectCheck('strict-check-good', 'fn f() -> i32 { 1 }\np(f())', true);
 
+/* emoji / Ds+ 虚拟硬件回归 */
+expect('emoji-string', 'p("🚀 你好 🌱")', '🚀 你好 🌱\n');
+expect('emoji-ident', 'fn main() { let 🌱 = 1; let 🚀speed = 2; p(🌱 + 🚀speed) }', '3\n');
+expect('flow-dsf-filename', 'fn main() {\n  var x = ?1 < 2: 10; 20\n  p(x)\n}', '10\n', { filename: 'flow_hello.dsf' });
+expect('dsplus-virtual', '@static var g: u64 = 0x1000\n@stack var s: i32 = 42\n@unsafe fn kernel() {\n  @outb(0x3F8, 65)\n  let k = @inb(0x3F8)\n  p(k)\n  @asm volatile("cli")\n}\np(g)\np(s)\nkernel()\n', '4096\n42\n65\n');
+expect('dsplus-unsafe-block', '@unsafe { let x = 7; p(x) }\n', '7\n');
+expectCheck('dsplus-check', '@unsafe fn k() { @outb(1, 2) }', true);
+
+expect('emoji-flag', 'fn main() { let 🇨🇳 = 2; let ❤️ = 3; p(🇨🇳 + ❤️) }', '5\n');
+expect('emoji-zwj', 'p("👨‍👩‍👧‍👦")', '👨‍👩‍👧‍👦\n');
+expect('dsplus-volatile', '@volatile var v: i32 = 8\np(v)\n', '8\n');
+expect('dsplus-asm-operands', '@unsafe fn f() {\n  let a = 1\n  @asm volatile("adds r0, r0, #1", in("r0") a, out("r0") a)\n  p(a)\n}\nf()\n', '1\n');
+expect('dsplus-mmap', 'let b = @mmap(0x1000, 4)\nb[0] = 9\np(b[0])\n', '9\n');
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);

@@ -13,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.3.3';
   var MAX_STEPS = 20 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -50,6 +50,25 @@
   DsError.prototype.constructor = DsError;
 
   /* ============================ 词法 ============================ */
+  var ID_START_RE, ID_PART_RE;
+  try {
+    ID_START_RE = /[\p{L}\p{Nl}\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Regional_Indicator}\p{So}_$]/u;
+    ID_PART_RE = /[\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Regional_Indicator}\p{So}\u200C\u200D\uFE0F\u{E0020}-\u{E007F}\u{1F3FB}-\u{1F3FF}_$]/u;
+  } catch (e) {
+    ID_START_RE = /[A-Za-z_$]/;
+    ID_PART_RE = /[A-Za-z0-9_$]/;
+  }
+  function isIdentStartAt(src, at) {
+    var cp = src.codePointAt(at);
+    if (cp === undefined) return false;
+    return ID_START_RE.test(String.fromCodePoint(cp));
+  }
+  function isIdentPartAt(src, at) {
+    var cp = src.codePointAt(at);
+    if (cp === undefined) return false;
+    return ID_PART_RE.test(String.fromCodePoint(cp));
+  }
+
   var OPS = ['<<=','>>=','+=','-=','*=','/=','%=','&=','|=','^=',
              '|>','->','=>','<<','>>','<=','>=','==','!=','&&','||','..',
              '+','-','*','/','%','=','!','<','>','&','|','^','~','.','@'];
@@ -144,6 +163,19 @@
         if (i >= n) fail('字符串未闭合', s0);
         i++;
         push('str', buf, s0, buf);
+        continue;
+      }
+
+      if (c === '@' && isIdentStartAt(src, i + 1)) {
+        var at0 = i; i++;
+        var atw = '';
+        while (i < n && isIdentPartAt(src, i)) {
+          var acp = src.codePointAt(i);
+          var ach = String.fromCodePoint(acp);
+          atw += ach; i += ach.length;
+        }
+        var atname = '@' + atw;
+        push('kw', atname, at0, atname);
         continue;
       }
 
@@ -243,10 +275,13 @@
         continue;
       }
 
-      if (/[A-Za-z_]/.test(c)) {
-        var i0 = i;
-        while (i < n && /[A-Za-z0-9_]/.test(src[i])) i++;
-        var word = src.slice(i0, i);
+      if (isIdentStartAt(src, i)) {
+        var i0 = i, word = '';
+        while (i < n && isIdentPartAt(src, i)) {
+          var ucp = src.codePointAt(i);
+          var uch = String.fromCodePoint(ucp);
+          word += uch; i += uch.length;
+        }
         if (word === '_') push('ident', '_', i0, '_');
         else if (KEYWORDS.has(word)) push('kw', word, i0, word);
         else push('ident', word, i0, word);
@@ -368,7 +403,27 @@
         if (this.cur().k === 'eof') break;
         if (this.isKw('package')) { this.adv(); this.skipNl(); if (this.cur().k === 'ident') this.adv(); continue; }
         var item;
-        if (this.isKw('fn')) item = this.parseFn();
+        if (this.isKw('@unsafe') || this.isKw('@irq')) {
+          var attr = this.cur().text; this.adv();
+          if (attr === '@irq' && this.isPunct('(')) {
+            this.adv();
+            if (this.cur().k === 'int') this.adv();
+            this.expectPunct(')', '@irq 编号');
+          }
+          this.skipNl();
+          if (this.isKw('fn')) item = this.parseFn();
+          else if (this.isPunct('{')) item = this.parseBlock();
+          else item = this.parseStmt();
+        } else if (this.isKw('@stack') || this.isKw('@static') || this.isKw('@raw')) {
+          this.adv();
+          this.skipNl();
+          item = this.parseLet();
+        } else if (this.isKw('@section') || this.isKw('@packed') || this.isKw('@volatile')) {
+          this.adv();
+          if (this.isPunct('(')) { this.adv(); while (!this.isPunct(')') && this.cur().k !== 'eof') this.adv(); this.expectPunct(')', '属性参数'); }
+          this.skipNl();
+          item = this.isKw('fn') ? this.parseFn() : this.parseStmt();
+        } else if (this.isKw('fn')) item = this.parseFn();
         else if (this.isKw('let') || this.isKw('var')) item = this.parseLet();
         else {
           if (this.cur().k === 'kw') this.rejectUnsupported();
@@ -499,6 +554,20 @@
       var t = this.cur();
       if (t.k === 'eof') return null;
       if (this.isPunct('{')) return this.parseBlock();
+      if (this.isKw('@stack') || this.isKw('@static') || this.isKw('@raw')) {
+        this.adv(); this.skipNl(); return this.parseLet();
+      }
+      if (this.isKw('@unsafe')) {
+        this.adv(); this.skipNl();
+        if (this.isPunct('{')) return this.parseBlock();
+        return this.parseStmt();
+      }
+      if (this.isKw('@irq')) {
+        this.adv();
+        if (this.isPunct('(')) { this.adv(); if (this.cur().k === 'int') this.adv(); this.expectPunct(')', '@irq 编号'); }
+        this.skipNl();
+        return this.isKw('fn') ? this.parseFn() : this.parseStmt();
+      }
       if (this.isKw('let') || this.isKw('var')) return this.parseLet();
       if (this.flow && this.isPunct('\\')) return this.parseFlowFn();
       if (this.flow && this.isPunct('?')) return this.parseFlowIf();
@@ -841,6 +910,53 @@
           }
         });
         return { type: 'FStr', parts: fparts, line: t.line, col: t.col };
+      }
+      if (t.k === 'kw' && t.text.charAt(0) === '@') {
+        var aname = t.text; this.adv();
+        if (aname === '@asm') {
+          if (this.isKw('volatile')) this.adv();
+          var atext = '';
+          if (this.isPunct('(')) {
+            this.adv();
+            if (this.cur().k !== 'str') this.fail('@asm 需要汇编字符串');
+            atext = this.cur().v; this.adv();
+            /* 约束操作数（in/out）在 Android 虚拟硬件里不执行，跳过即可 */
+            var adepth = 0;
+            while (this.cur().k !== 'eof') {
+              var atk = this.cur();
+              if (atk.k === 'punct' && atk.text === '(') adepth++;
+              else if (atk.k === 'punct' && atk.text === ')') {
+                if (adepth === 0) break;
+                adepth--;
+              }
+              this.adv();
+            }
+            this.expectPunct(')', '@asm 参数');
+          } else if (this.cur().k === 'str') {
+            atext = this.cur().v; this.adv();
+          } else {
+            this.fail('@asm 需要字符串或 volatile("...")');
+          }
+          return { type: 'Asm', text: atext, line: t.line, col: t.col };
+        }
+        if (aname === '@unsafe' && this.isPunct('{')) {
+          return { type: 'BlockExpr', block: this.parseBlock(), line: t.line, col: t.col };
+        }
+        var aargs = [];
+        if (this.isPunct('(')) {
+          this.adv(); this.skipNl();
+          if (!this.isPunct(')')) {
+            for (;;) {
+              aargs.push(this.parseNoApply(function () { return this.parseExpr(1); }));
+              this.skipNl();
+              if (this.isPunct(',')) { this.adv(); continue; }
+              break;
+            }
+          }
+          this.expectPunct(')', 'Ds+ 内置调用');
+        }
+        return { type: 'Call', callee: { type: 'Var', name: aname, line: t.line, col: t.col },
+                 args: aargs, line: t.line, col: t.col };
       }
       if (t.k === 'ident') {
         var name = t.v; this.adv();
@@ -1314,6 +1430,7 @@
     this.steps = 0;
     this.flow = !!opts.flow;
     this.maxSteps = opts.maxSteps || MAX_STEPS;
+    this.hw = { ports: {}, msr: {}, cr: {}, mem: {}, mmaps: {} };
     this.global = new Env(null);
     this.installBuiltins();
   }
@@ -1394,6 +1511,52 @@
       });
       define('pow', function (args, line, col) {
         return vFloat(Math.pow(num(args[0], line, col, 'pow'), num(args[1], line, col, 'pow')));
+      });
+      /* Ds+ 虚拟硬件：Android 无真实端口/MMIO 权限，这里做可执行的虚拟设备 */
+      var hw = self.hw;
+      function port(args, line, col, bits) {
+        if (!args.length) throw new DsError('端口操作需要地址', line, col);
+        var addr = num(args[0], line, col, '端口地址') & 0xffff;
+        if (args.length === 1) {
+          var v = hw.ports[addr] || 0;
+          return vInt(bits === 8 ? (v & 0xff) : bits === 16 ? (v & 0xffff) : (v | 0));
+        }
+        var val = num(args[1], line, col, '端口值') | 0;
+        hw.ports[addr] = bits === 8 ? (val & 0xff) : bits === 16 ? (val & 0xffff) : val;
+        return vUnit();
+      }
+      define('@outb', function (a, l, c) { return port(a, l, c, 8); });
+      define('@inb',  function (a, l, c) { return port(a, l, c, 8); });
+      define('@outw', function (a, l, c) { return port(a, l, c, 16); });
+      define('@inw',  function (a, l, c) { return port(a, l, c, 16); });
+      define('@outl', function (a, l, c) { return port(a, l, c, 32); });
+      define('@inl',  function (a, l, c) { return port(a, l, c, 32); });
+      function msr(args, l, c) {
+        if (!args.length) throw new DsError('MSR/CR 操作需要编号', l, c);
+        var n = num(args[0], l, c, '编号') | 0;
+        if (args.length === 1) return vInt(hw.msr[n] || 0);
+        hw.msr[n] = num(args[1], l, c, '值') | 0; return vUnit();
+      }
+      define('@rdmsr', function (a, l, c) { return msr(a, l, c); });
+      define('@wrmsr', function (a, l, c) { return msr(a, l, c); });
+      define('@rdcr', function (a, l, c) { var n = num(a[0], l, c, 'CR') | 0; return vInt(hw.cr[n] || 0); });
+      define('@wrcr', function (a, l, c) { var n = num(a[0], l, c, 'CR') | 0; hw.cr[n] = num(a[1], l, c, '值') | 0; return vUnit(); });
+      define('@mmio', function (a, l, c) {
+        var addr = num(a[0], l, c, 'MMIO 地址') | 0;
+        if (a.length === 1) return vInt(hw.mem[addr] || 0);
+        hw.mem[addr] = num(a[1], l, c, 'MMIO 值') | 0; return vUnit();
+      });
+      define('@mmap', function (a, l, c) {
+        var addr = num(a[0], l, c, 'mmap 地址') | 0;
+        var len = a.length > 1 ? num(a[1], l, c, 'mmap 长度') | 0 : 4096;
+        if (len < 0 || len > 1000000) throw new DsError('mmap 长度非法', l, c);
+        var buf = new Array(len).fill(vInt(0));
+        hw.mmaps[addr] = buf;
+        return vArr(buf);
+      });
+      define('@raw', function (a, l, c) {
+        var len = a.length ? num(a[0], l, c, 'raw 长度') | 0 : 64;
+        return vArr(new Array(len).fill(vInt(0)));
       });
       /* 短别名：与 Python 参考实现一致，所有写法都可用 */
       var alias = { p: 'println', s: 'str', l: 'len', r: 'range' };
@@ -1570,6 +1733,7 @@
           for (var i = 0; i < node.keys.length; i++) pairs.push([this.evalExpr(env, node.keys[i]), this.evalExpr(env, node.vals[i])]);
           return vMap(pairs);
         }
+        case 'Asm': return vUnit();
         case 'BlockExpr': return this.execBlock(env, node.block);
         case 'If': return this.execStmt(env, node);
         case 'FStr': {

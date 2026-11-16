@@ -146,7 +146,7 @@
     var t0 = Date.now();
     var r;
     try {
-      r = DsLang.run(code);
+      r = DsLang.run(code, { filename: currentFile });
     } catch (e) {
       appendConsole('编译器内部错误：' + (e && e.message ? e.message : String(e)), 'err');
       setStatus('内部错误');
@@ -155,6 +155,7 @@
     var out = (r.output || []).map(function (o) { return o.s; }).join('');
     if (r.ok) {
       appendConsole(out.length ? out.replace(/\n$/, '') : '(无输出)', out.length ? '' : 'meta');
+      if (/@/.test(code)) appendConsole('（Ds+ 虚拟硬件：端口/MMIO/@asm 为模拟执行）', 'meta');
       appendConsole('✓ 运行成功 · ' + (Date.now() - t0) + ' ms', 'ok');
       setStatus('成功');
     } else {
