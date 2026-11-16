@@ -13,8 +13,8 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.3.4';
-  var MAX_STEPS = 20 * 1000 * 1000;
+  var VERSION = '0.3.5';
+  var MAX_STEPS = 50 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
   var KEYWORDS = new Set([
