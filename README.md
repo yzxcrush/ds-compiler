@@ -1,6 +1,6 @@
 # Ds Compiler（Android）
 
-手机上的 **Ds v0.1 编译器**（v0.3.0）：**Pydroid 3 风格全屏编辑器** + 行号 + 符号快捷栏 + 输出控制台。
+手机上的 **Ds v0.1 编译器**（v0.3.4）：**Pydroid 3 风格全屏编辑器** + 行号 + 符号快捷栏 + 输出控制台。
 单 Activity + WebView 外壳，Ds 词法/解析/求值全部内置在 `assets/ds.js`，**完全离线**，不需要网络权限。
 
 ## 功能
@@ -30,6 +30,12 @@
 支持：`package`、`fn`（参数/返回类型/默认参数/递归/闭包）、`let`/`var`、`if`/`else`、`while`、`loop`、`for-in`、`break`/`continue`/`return`、
 字面量（十进制/十六进制/二进制整数、浮点、字符串、字节串、数组、映射）、整数/浮点/字符串/数组运算、比较与逻辑、位运算、
 `|>` 管道、函数值、`len`/`range`/`str`/`concat`/`format`/`math.sqrt|round|floor|ceil|abs|pow`、错误定位、死循环步数保护。
+
+**Android 扩展**：
+- **emoji/Unicode 标识符**：`let 🌱 = 1`、`let 🇨🇳 = 2`、`let ❤️ = 3`、ZWJ 家庭 emoji 均可；
+- **Ds+ 虚拟硬件**：`@unsafe/@outb/@inb/@outw/@inw/@outl/@inl/@rdmsr/@wrmsr/@rdcr/@wrcr/@mmio/@mmap/@raw/@static/@stack/@irq/@volatile/@section/@asm`；
+  端口/MMIO/MSR/CR 为进程内虚拟设备，`@asm` 为 no-op（Android 无法真正执行裸机汇编），控制台会标注「虚拟硬件」；
+- **Flow 文件按文件名自动识别**：`.dsf` 即使内容没有 `#!flow` 也会启用 Flow，`?` 条件不再误报非法字符。
 
 暂不支持（会给出明确报错）：`class/trait/impl`、`match`、`opt/res`、`try/catch`、宏与 `comptime`、并发与内存原语——这些属于完整规范，后续版本补齐。
 
@@ -75,7 +81,7 @@ tests/node_test.js      # 内核单元测试（Node 直接跑）
 ## 测试
 
 ```bash
-node tests/node_test.js    # 60 项内核测试
+node tests/node_test.js    # 86 项内核测试
 ```
 
 ## License

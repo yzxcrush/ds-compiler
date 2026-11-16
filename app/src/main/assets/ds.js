@@ -13,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.3.3';
+  var VERSION = '0.3.4';
   var MAX_STEPS = 20 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -411,6 +411,7 @@
             this.expectPunct(')', '@irq 编号');
           }
           this.skipNl();
+          if (attr === '@irq' && this.isKw('irq')) { this.adv(); this.skipNl(); }
           if (this.isKw('fn')) item = this.parseFn();
           else if (this.isPunct('{')) item = this.parseBlock();
           else item = this.parseStmt();
@@ -562,9 +563,17 @@
         if (this.isPunct('{')) return this.parseBlock();
         return this.parseStmt();
       }
+      if (this.isKw('@section') || this.isKw('@packed') || this.isKw('@volatile')) {
+        this.adv();
+        if (this.isPunct('(')) { this.adv(); while (!this.isPunct(')') && this.cur().k !== 'eof') this.adv(); this.expectPunct(')', '属性参数'); }
+        this.skipNl();
+        return this.parseStmt();
+      }
       if (this.isKw('@irq')) {
         this.adv();
         if (this.isPunct('(')) { this.adv(); if (this.cur().k === 'int') this.adv(); this.expectPunct(')', '@irq 编号'); }
+        this.skipNl();
+        if (this.isKw('irq')) this.adv();
         this.skipNl();
         return this.isKw('fn') ? this.parseFn() : this.parseStmt();
       }
