@@ -13,7 +13,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var VERSION = '0.3.5';
+  var VERSION = '0.3.6';
   var MAX_STEPS = 50 * 1000 * 1000;
   var MAX_OUTPUT = 1024 * 1024;
 
@@ -1410,12 +1410,27 @@
         var a = blockValue(e.then, scope, sigs);
         if (e.else) {
           var b = e.else.type === 'Block' ? blockValue(e.else, scope, sigs) : infer(e.else, scope, sigs);
+          if (a && b) {
+            if (a === 'intlit' && INT_TYPES[b]) a = b;
+            else if (b === 'intlit' && INT_TYPES[a]) b = a;
+            if (a !== b) checkErr('if 分支类型不一致：' + a + ' 与 ' + b, e);
+          }
           return a === b ? a : null;
         }
         return null;
       }
       case 'BlockExpr': return blockValue(e.block, scope, sigs);
-      case 'Array': for (var n = 0; n < e.items.length; n++) infer(e.items[n], scope, sigs); return 'array';
+      case 'Array': {
+        var base = null;
+        for (var n = 0; n < e.items.length; n++) {
+          var at = infer(e.items[n], scope, sigs);
+          if (!at || at === '?') continue;
+          if (at === 'intlit') at = 'i32';
+          if (!base) base = at;
+          else if (base !== at) checkErr('数组元素类型不一致：' + base + ' 与 ' + at + '（无隐式提升）', e);
+        }
+        return 'array';
+      }
       case 'Map': return 'map';
       case 'Range': return 'array';
       case 'CallExpr': return infer(e, scope, sigs);
@@ -1781,7 +1796,10 @@
             throw new DsError('一元 `-` 需要数值', node.line, node.col);
           }
           if (node.op === '!') return vBool(!this.requireBool(u, node.line, node.col, '`!`'));
-          if (node.op === '~') { if (u.k !== 'int') throw new DsError('`~` 需要整数', node.line, node.col); return vInt(~u.v); }
+          if (node.op === '~') {
+            if (u.k !== 'int') throw new DsError('`~` 需要整数', node.line, node.col);
+            return vInt(Number(~BigInt(Math.trunc(u.v))));
+          }
           throw new DsError('未知一元运算符 ' + node.op, node.line, node.col);
         }
         case 'Binary': return this.evalBinary(env, node);
@@ -1880,11 +1898,15 @@
       if (BIT.has(op)) {
         if (a.k !== 'int' || b.k !== 'int') throw new DsError('位运算需要两个整数', line, col);
         if ((op === '<<' || op === '>>') && (b.v < 0 || b.v >= 64)) throw new DsError('移位量越界', line, col);
-        if (op === '&') return vInt(a.v & b.v);
-        if (op === '|') return vInt(a.v | b.v);
-        if (op === '^') return vInt(a.v ^ b.v);
-        if (op === '<<') return vInt(a.v << b.v);
-        return vInt(a.v >> b.v);
+        /* 用 BigInt 做 64 位语义，避免 JS 默认 32 位按位运算与 Python/C 不一致 */
+        var A = BigInt(Math.trunc(a.v)), B = BigInt(Math.trunc(b.v));
+        var R;
+        if (op === '&') R = A & B;
+        else if (op === '|') R = A | B;
+        else if (op === '^') R = A ^ B;
+        else if (op === '<<') R = A << B;
+        else R = A >> B;
+        return vInt(Number(R));
       }
       if (CMP.has(op)) {
         var cmp;

@@ -117,5 +117,9 @@ expect('dsplus-mmap', 'let b = @mmap(0x1000, 4)\nb[0] = 9\np(b[0])\n', '9\n');
 expect('dsplus-attr-stmt', '@unsafe fn f() {\n  @volatile var v: i32 = 4\n  @section(".x") var w: i32 = 5\n  p(v + w)\n}\nf()\n', '9\n');
 expect('dsplus-irq-base', '@irq(5) irq fn tick() { p("tick") }\ntick()\n', 'tick\n');
 
+expect('bitwise-64', 'p(1 << 31); p(~0); p(-8 >> 1)', '2147483648\n-1\n-4\n');
+expectError('array-mixed', 'p([1, "x"])', '数组元素类型不一致');
+expectError('if-mixed', 'let x = if true { 1 } else { "s" }\np(x)', 'if 分支类型不一致');
+
 if (fail === 0) { console.log(`✓ 内核测试全部通过（${pass} 项）`); process.exit(0); }
 console.log(`✗ ${fail} 项失败`); process.exit(1);
